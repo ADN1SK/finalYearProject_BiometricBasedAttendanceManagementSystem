@@ -1,5 +1,5 @@
 import uuid
-from django.contrib.auth.models import AbstractUser, UserManager
+from django.contrib.auth.models import AbstractUser, UserManager, Permission
 from django.db import models
 
 # 1. Departments Table
@@ -13,17 +13,27 @@ class Department(models.Model):
 
 # 12. Roles Table
 class Role(models.Model):
+    ADMINISTRATOR = 'Administrator'
+    HR_OFFICER = 'HR Officer'
+    EMPLOYEE = 'Employee'
+    
+    ROLE_CHOICES = (
+        (ADMINISTRATOR, 'System administrator with full access'),
+        (HR_OFFICER, 'HR officer with access to employee management'),
+        (EMPLOYEE, 'Regular employee with limited access'),
+    )
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, db_column='_id')
-    name = models.CharField(max_length=100, unique=True)
+    name = models.CharField(max_length=100, unique=True, choices=ROLE_CHOICES)
     description = models.TextField(blank=True, null=True)
+    permissions = models.ManyToManyField(Permission, related_name='roles')
 
     def __str__(self):
-        return self.name
+        return self.get_name_display()
 
 # 1. Users Table
 class User(AbstractUser):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, db_column='_id')
-    # username, email, password, first_name, last_name are inherited from AbstractUser
     
     class Status(models.TextChoices):
         ACTIVE = 'ACTIVE', 'Active'
@@ -32,12 +42,22 @@ class User(AbstractUser):
     status = models.CharField(max_length=50, choices=Status.choices, default=Status.ACTIVE)
     roles = models.ManyToManyField(Role, through='UserRole', related_name='users')
     
-    # This is the corrected line. We must use the UserManager to get all
-    # the necessary methods for authentication.
     objects = UserManager()
 
     def __str__(self):
         return self.username
+
+    @property
+    def is_administrator(self):
+        return self.is_superuser or self.roles.filter(name=Role.ADMINISTRATOR).exists()
+
+    @property
+    def is_hr_officer(self):
+        return self.roles.filter(name=Role.HR_OFFICER).exists()
+
+    @property
+    def is_employee(self):
+        return self.roles.filter(name=Role.EMPLOYEE).exists()
 
 # 7. User Roles (Junction Table)
 class UserRole(models.Model):
@@ -77,8 +97,13 @@ class BiometricTemplate(models.Model):
         FINGERPRINT = 'FINGERPRINT', 'Fingerprint'
 
     type = models.CharField(max_length=50, choices=BiometricType.choices)
-    # Storing the embedding array as a JSONField is best practice for this use case.
     template_data = models.JSONField(db_column='templateData')
 
     def __str__(self):
         return f"{self.type} template for {self.user.username}"
+
+# 18. Workflow Table
+class Workflow(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, db_column='_id')
+    name = models.CharField(max_length=255)
+    steps = models.JSONField(null=True, blank=True)

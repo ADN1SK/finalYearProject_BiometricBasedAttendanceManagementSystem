@@ -149,3 +149,22 @@ def assignment_detail(request, assignment_id):
         return JsonResponse({'success': True, 'message': 'Assignment deleted successfully'}, status=204)
     
     return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+@csrf_exempt
+def my_assignments(request):
+    user = get_user_from_request(request)
+    if not user:
+        return JsonResponse({'error': 'Authentication required'}, status=401)
+        
+    if request.method == 'GET':
+        assignments = Assignment.objects.filter(user=user).select_related('shift')
+        data = [{
+            'id': assignment.id,
+            'shift': assignment.shift.name,
+            'time': f"{assignment.shift.start_time.strftime('%I:%M %p')} - {assignment.shift.end_time.strftime('%I:%M %p')}",
+            'from_date': assignment.from_date,
+            'to_date': assignment.to_date,
+        } for assignment in assignments]
+        return JsonResponse({'success': True, 'assignments': data})
+        
+    return JsonResponse({'error': 'Method not allowed'}, status=405)

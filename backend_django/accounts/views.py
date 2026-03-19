@@ -1,193 +1,655 @@
+import base64
+import io
+import json
+import logging
+import numpy as np
+import cv2
+
+from PIL import Image
+from mtcnn import MTCNN
+from deepface import DeepFace
+
 from django.shortcuts import render, get_object_or_404
 from django.contrib.admin.views.decorators import staff_member_required
 from django.urls import reverse
-from django.contrib import messages
-from .models import User, EmployeeDetail, BiometricTemplate
-import base64
-from django.core.files.base import ContentFile
-import numpy as np
-from PIL import Image
-import io
-import json
-from mtcnn import MTCNN
-from deepface import DeepFace
-from scipy.spatial.distance import cosine
 from django.http import JsonResponse
+from django.contrib.auth import get_user_model, authenticate, login, logout
+from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 
-# --- Face Recognition Logic and Cache ---
-detector = MTCNN()
-known_embeddings_matrix = None
-known_user_info = []
+from .models import EmployeeDetail, BiometricTemplate
+
+User = get_user_model()
+logger = logging.getLogger(__name__)
+
+# =====================================
+# AUTHENTICATION Endpoints for SPA
+# =====================================
+
+@ensure_csrf_cookie
+def get_csrf(request):
+    return JsonResponse({'success': 'CSRF cookie set'})
+
+@csrf_exempt
+def api_login(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            username = data.get('username')
+            password = data.get('password')
+            user = authenticate(request, username=username, password=password)
+            if user is not None:
+                login(request, user)
+                
+                # Determine highest role for UI purposes
+                role = 'Employee'
+                if user.is_administrator:
+                    role = 'Administrator'
+                elif user.is_hr_officer:
+                    role = 'HR Officer'
+                    
+                return JsonResponse({
+                    'success': True, 
+                    'user': {
+                        'id': str(user.id),
+                        'username': user.username,
+                        'role': role
+                    }
+                })
+            else:
+                return JsonResponse({'success': False, 'error': 'Invalid credentials'}, status=401)
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)}, status=400)
+    return JsonResponse({'error': 'POST required'}, status=405)
+
+@csrf_exempt
+def api_logout(request):
+    logout(request)
+    return JsonResponse({'success': True})
+# FAST DETECTOR (for /face/check/)
+# =====================================
+
+face_cascade = cv2.CascadeClassifier(
+    cv2.data.haarcascades +
+    "haarcascade_frontalface_default.xml"
+)
+
+
+# =====================================
+# ACCURATE DETECTOR (for enrollment)
+# =====================================
+
+try:
+    detector = MTCNN()
+    logger.info("MTCNN loaded")
+except Exception as e:
+    logger.error(e)
+    detector = None
+
+
+# =====================================
+# CACHE
+# =====================================
+
+known_embeddings = []
+known_user_ids = []
+known_usernames = []
+
 
 def load_known_embeddings():
-    """Loads all face embeddings from the database into memory."""
-    global known_embeddings_matrix, known_user_info
-    
-    templates = list(BiometricTemplate.objects.filter(type=BiometricTemplate.BiometricType.FACE).select_related('user'))
-    
-    if not templates:
-        known_embeddings_matrix = None
-        known_user_info = []
-        print("No face embeddings found in the database for enrollment check.")
-        return
 
-    known_user_info = [{
-        'user_id': str(template.user.id),
-        'username': template.user.username
-    } for template in templates]
-    
-    embeddings = [np.array(template.template_data) for template in templates]
-    known_embeddings_matrix = np.array(embeddings)
-    
-    # Normalize the matrix for faster cosine similarity calculation
-    norms = np.linalg.norm(known_embeddings_matrix, axis=1, keepdims=True)
-    known_embeddings_matrix = known_embeddings_matrix / norms
+    global known_embeddings
+    global known_user_ids
+    global known_usernames
 
-    print(f"Loaded and normalized {len(known_user_info)} face embeddings for enrollment check.")
+    templates = BiometricTemplate.objects.filter(
+        type=BiometricTemplate.BiometricType.FACE
+    ).select_related("user")
+
+    known_embeddings = [
+        np.array(t.template_data)
+        for t in templates
+    ]
+
+    known_user_ids = [
+        str(t.user.id)
+        for t in templates
+    ]
+
+    known_usernames = [
+        t.user.username
+        for t in templates
+    ]
+
+    logger.info(
+        f"Loaded {len(known_embeddings)} templates"
+    )
+
 
 load_known_embeddings()
 
-def extract_embedding(face_rgb):
-    """Extracts a face embedding using DeepFace."""
+
+# =====================================
+# CHALLENGES
+# =====================================
+
+CHALLENGES = [
+
+    {
+        "type": "center",
+        "text": "Look Forward",
+        "instruction": "Look straight"
+    },
+
+    {
+        "type": "blink",
+        "text": "Blink",
+        "instruction": "Blink eyes"
+    },
+
+    {
+        "type": "left",
+        "text": "Turn Left",
+        "instruction": "Turn left"
+    },
+
+    {
+        "type": "right",
+        "text": "Turn Right",
+        "instruction": "Turn right"
+    },
+
+]
+
+
+# =====================================
+# FAST FACE CHECK (NO MTCNN)
+# =====================================
+
+@csrf_exempt
+def check_face(request):
+
     try:
-        embedding_objs = DeepFace.represent(
-            img_path=face_rgb, model_name='Facenet512',
-            enforce_detection=False, detector_backend='skip'
+
+        data = json.loads(
+            request.body
         )
-        return embedding_objs[0]['embedding']
+
+        frame = data.get("frame")
+
+        if not frame:
+            return JsonResponse(
+                {"face": False}
+            )
+
+        _, img_str = frame.split(
+            ";base64,"
+        )
+
+        img = Image.open(
+            io.BytesIO(
+                base64.b64decode(img_str)
+            )
+        ).convert("RGB")
+
+        img_np = np.array(img)
+
+        gray = cv2.cvtColor(
+            img_np,
+            cv2.COLOR_RGB2GRAY
+        )
+
+        faces = face_cascade.detectMultiScale(
+            gray,
+            scaleFactor=1.2,
+            minNeighbors=5,
+            minSize=(60, 60),
+        )
+
+        if len(faces) == 1:
+            return JsonResponse(
+                {"face": True}
+            )
+
+        return JsonResponse(
+            {"face": False}
+        )
+
     except Exception as e:
-        print(f"Error extracting embedding: {e}")
-        return None
 
-def find_best_match(query_embedding, threshold=0.6):
-    """Finds the best match for a given embedding from the known embeddings."""
-    if known_embeddings_matrix is None:
-        return None, float('inf')
+        logger.error(e)
 
-    # Normalize the query embedding
-    query_embedding_normalized = query_embedding / np.linalg.norm(query_embedding)
-    
-    # Perform dot product (cosine similarity) between normalized vectors
-    similarities = np.dot(known_embeddings_matrix, query_embedding_normalized)
-    
-    # Cosine distance is 1 - similarity
-    distances = 1 - similarities
-    
-    best_match_index = np.argmin(distances)
-    min_distance = distances[best_match_index]
+        return JsonResponse(
+            {"face": False}
+        )
 
-    if min_distance < threshold:
-        best_match = known_user_info[best_match_index]
-        return best_match, min_distance
-        
-    return None, min_distance
 
-def perform_liveness_check(image_frames, challenge_type):
-    """
-    Performs a liveness check and returns the detected face from the center frame.
-    Returns (is_successful, message, center_frame_array, center_frame_face_details).
-    """
-    nose_positions = []
-    decoded_frames = []
-    detected_faces_data = []
-
-    if not image_frames:
-        return False, "No image frames received. Please try again.", None, None
-
-    for frame_data in image_frames:
-        try:
-            format, imgstr = frame_data.split(';base64,')
-            image_content = ContentFile(base64.b64decode(imgstr))
-            image = Image.open(image_content).convert('RGB')
-            decoded_frames.append(np.array(image))
-        except (ValueError, TypeError):
-            continue
-
-    if len(decoded_frames) < 3:
-        return False, "Could not read enough frames. Please ensure a stable connection.", None, None
-
-    for frame_array in decoded_frames:
-        faces = detector.detect_faces(frame_array)
-        if len(faces) == 0:
-            return False, "Could not detect a face in one or more frames. Ensure your face is clearly visible.", None, None
-        if len(faces) > 1:
-            return False, "Multiple faces detected. Ensure only one person is in the frame.", None, None
-        
-        detected_faces_data.append(faces[0])
-        nose_positions.append(faces[0]['keypoints']['nose'][0])
-
-    start_pos, end_pos = nose_positions[0], nose_positions[-1]
-    movement_threshold = 25
-
-    is_moving_correctly = False
-    if challenge_type == 'head_turn_left' and start_pos - end_pos > movement_threshold:
-        is_moving_correctly = True
-    elif challenge_type == 'head_turn_right' and end_pos - start_pos > movement_threshold:
-        is_moving_correctly = True
-
-    if not is_moving_correctly:
-        return False, "Liveness check failed: Head movement not detected. Please follow the instructions.", None, None
-
-    center_frame_index = len(decoded_frames) // 2
-    center_frame = decoded_frames[center_frame_index]
-    center_face_details = detected_faces_data[center_frame_index]
-    
-    return True, "Liveness check successful.", center_frame, center_face_details
-
-# --- Admin Face Capture View ---
+# =====================================
+# ENROLLMENT
+# =====================================
 
 @staff_member_required
 def capture_face(request, user_id):
-    user = get_object_or_404(User, pk=user_id)
 
-    if request.method == 'POST':
-        try:
-            image_frames_json = request.POST.get('image_frames')
-            challenge_type = request.POST.get('challenge_type')
+    user = get_object_or_404(
+        User,
+        pk=user_id
+    )
 
-            if not image_frames_json or not challenge_type:
-                return JsonResponse({'success': False, 'message': 'Liveness check data is missing.'})
+    if request.method == "GET":
 
-            image_frames = json.loads(image_frames_json)
-            
-            is_live, message, center_frame, face_details = perform_liveness_check(image_frames, challenge_type)
-            
-            if not is_live:
-                return JsonResponse({'success': False, 'message': message})
+        request.session.pop(
+            "face_frames",
+            None
+        )
 
-            x, y, w, h = face_details['box']
-            face_img = center_frame[y:y+h, x:x+w]
-            embedding = extract_embedding(face_img)
+        return render(
+            request,
+            "accounts/capture.html",
+            {
+                "user": user,
+                "challenges": CHALLENGES,
+            },
+        )
 
-            if embedding is None:
-                return JsonResponse({'success': False, 'message': 'Could not extract face features. Please try again with better lighting.'})
+    try:
 
-            match, distance = find_best_match(np.array(embedding))
-            if match and match['user_id'] != str(user.id):
-                message = f"Enrollment failed. This face is already registered to user '{match['username']}'."
-                return JsonResponse({'success': False, 'message': message})
+        data = json.loads(
+            request.body
+        )
+
+        frames = data.get(
+            "frames",
+            []
+        )
+
+        challenge = data.get(
+            "challenge"
+        )
+
+        step = data.get(
+            "step",
+            0
+        )
+
+        if not frames:
+
+            return JsonResponse(
+                {
+                    "success": False,
+                    "error": "No frames",
+                }
+            )
+
+        valid_frames = []
+        movements = []
+
+        for frame_data in frames:
+
+            _, img_str = frame_data.split(
+                ";base64,"
+            )
+
+            img = Image.open(
+                io.BytesIO(
+                    base64.b64decode(
+                        img_str
+                    )
+                )
+            ).convert("RGB")
+
+            img_np = np.array(img)
+
+            faces = detector.detect_faces(
+                img_np
+            )
+
+            if len(faces) != 1:
+                continue
+
+            face = faces[0]
+
+            x, y, w, h = face["box"]
+
+            x = max(0, x)
+            y = max(0, y)
+
+            nose = face["keypoints"][
+                "nose"
+            ]
+
+            left_eye = face["keypoints"][
+                "left_eye"
+            ]
+
+            right_eye = face["keypoints"][
+                "right_eye"
+            ]
+
+            movements.append(
+                nose[0]
+            )
+
+            valid_frames.append(
+                {
+                    "image": img_np,
+                    "box": [x, y, w, h],
+                    "eyes": [
+                        left_eye,
+                        right_eye,
+                    ],
+                }
+            )
+
+        if len(valid_frames) < 8:
+
+            return JsonResponse(
+                {
+                    "success": False,
+                    "error": "Face not stable",
+                }
+            )
+
+        move = (
+            movements[-1]
+            - movements[0]
+        )
+
+        # ==========
+        # LIVENESS
+        # ==========
+
+        if challenge == "left" and move > -20:
+
+            return JsonResponse(
+                {
+                    "success": False,
+                    "error": "Turn more left",
+                }
+            )
+
+        if challenge == "right" and move < 20:
+
+            return JsonResponse(
+                {
+                    "success": False,
+                    "error": "Turn more right",
+                }
+            )
+
+        if challenge == "blink":
+
+            eye_moves = []
+
+            for f in valid_frames:
+
+                e1, e2 = f["eyes"]
+
+                eye_moves.append(
+                    abs(
+                        e1[1]
+                        - e2[1]
+                    )
+                )
+
+            if (
+                max(eye_moves)
+                - min(eye_moves)
+                < 4
+            ):
+
+                return JsonResponse(
+                    {
+                        "success": False,
+                        "error": "Blink not detected",
+                    }
+                )
+
+        # ==========
+        # STORE
+        # ==========
+
+        if "face_frames" not in request.session:
+            request.session[
+                "face_frames"
+            ] = {}
+
+        face_data = []
+
+        for f in valid_frames:
+
+            x, y, w, h = f["box"]
+
+            face = f["image"][
+                y:y + h,
+                x:x + w,
+            ]
+
+            face = cv2.resize(
+                face,
+                (160, 160)
+            )
+
+            _, buf = cv2.imencode(
+                ".jpg",
+                cv2.cvtColor(
+                    face,
+                    cv2.COLOR_RGB2BGR,
+                ),
+                [
+                    int(
+                        cv2.IMWRITE_JPEG_QUALITY
+                    ),
+                    80,
+                ],
+            )
+
+            face_data.append(
+                base64.b64encode(
+                    buf
+                ).decode()
+            )
+
+        request.session[
+            "face_frames"
+        ][str(step)] = face_data
+
+        request.session.modified = True
+
+        # ==========
+        # FINAL
+        # ==========
+
+        if step >= len(
+            CHALLENGES
+        ) - 1:
+
+            all_faces = []
+
+            for i in range(
+                len(
+                    CHALLENGES
+                )
+            ):
+
+                all_faces.extend(
+                    request.session[
+                        "face_frames"
+                    ].get(
+                        str(i),
+                        [],
+                    )
+                )
+
+            embeddings = []
+
+            for f in all_faces[:8]:
+
+                img_bytes = base64.b64decode(
+                    f
+                )
+
+                img_np = cv2.imdecode(
+                    np.frombuffer(
+                        img_bytes,
+                        np.uint8,
+                    ),
+                    cv2.IMREAD_COLOR,
+                )
+
+                img_rgb = cv2.cvtColor(
+                    img_np,
+                    cv2.COLOR_BGR2RGB,
+                )
+
+                try:
+
+                    rep = DeepFace.represent(
+                        img_path=img_rgb,
+                        model_name="Facenet512",
+                        enforce_detection=False,
+                        detector_backend="skip",
+                    )
+
+                    embeddings.append(
+                        rep[0][
+                            "embedding"
+                        ]
+                    )
+
+                except Exception as e:
+
+                    logger.error(e)
+
+            if len(
+                embeddings
+            ) < 5:
+
+                return JsonResponse(
+                    {
+                        "success": False,
+                        "error": "Embedding error",
+                    }
+                )
+
+            avg = np.mean(
+                embeddings,
+                axis=0,
+            ).tolist()
+
+            # ==========
+            # DUPLICATE
+            # ==========
+
+            if known_embeddings:
+
+                q = np.array(
+                    avg
+                )
+
+                q = q / (
+                    np.linalg.norm(
+                        q
+                    )
+                    + 1e-7
+                )
+
+                best_i = -1
+                best_s = 0
+
+                for i, emb in enumerate(
+                    known_embeddings
+                ):
+
+                    e = emb / (
+                        np.linalg.norm(
+                            emb
+                        )
+                        + 1e-7
+                    )
+
+                    sim = np.dot(
+                        q,
+                        e,
+                    )
+
+                    if (
+                        sim > 0.8
+                        and sim
+                        > best_s
+                    ):
+
+                        best_s = sim
+                        best_i = i
+
+                if (
+                    best_i != -1
+                    and known_user_ids[
+                        best_i
+                    ]
+                    != str(
+                        user.id
+                    )
+                ):
+
+                    return JsonResponse(
+                        {
+                            "success": False,
+                            "error": f"Already used by {known_usernames[best_i]}",
+                        }
+                    )
 
             BiometricTemplate.objects.update_or_create(
                 user=user,
                 type=BiometricTemplate.BiometricType.FACE,
-                defaults={'template_data': embedding}
+                defaults={
+                    "template_data": avg
+                },
             )
 
-            try:
-                user.employeedetail.biometric_enrolled = True
-                user.employeedeetail.save()
-            except EmployeeDetail.DoesNotExist:
-                return JsonResponse({'success': False, 'message': 'Employee profile does not exist for this user.'})
+            EmployeeDetail.objects.update_or_create(
+                user=user,
+                defaults={
+                    "biometric_enrolled": True
+                },
+            )
+
+            request.session.pop(
+                "face_frames",
+                None,
+            )
 
             load_known_embeddings()
-            
-            messages.success(request, f"Face successfully enrolled for {user.username}.")
-            redirect_url = reverse('admin:accounts_user_change', args=[user.pk])
-            return JsonResponse({'success': True, 'redirect_url': redirect_url})
 
-        except json.JSONDecodeError:
-            return JsonResponse({'success': False, 'message': 'Invalid data format received from the browser.'})
-        except Exception as e:
-            return JsonResponse({'success': False, 'message': f'An unexpected error occurred: {e}'})
+            return JsonResponse(
+                {
+                    "success": True,
+                    "completed": True,
+                    "redirect": reverse(
+                        "admin:accounts_user_change",
+                        args=[
+                            user.pk
+                        ],
+                    ),
+                }
+            )
 
-    return render(request, 'accounts/capture.html', {'user': user})
+        return JsonResponse(
+            {
+                "success": True,
+                "next_step": step + 1,
+                "next_challenge": CHALLENGES[
+                    step + 1
+                ],
+            }
+        )
+
+    except Exception as e:
+
+        logger.exception(e)
+
+        return JsonResponse(
+            {
+                "success": False,
+                "error": str(e),
+            }
+        )

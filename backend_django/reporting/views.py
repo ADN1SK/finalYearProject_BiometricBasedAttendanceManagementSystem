@@ -4,6 +4,8 @@ from attendance.models import AttendanceRecord
 from accounts.models import User, Role
 from datetime import datetime, timedelta
 from django.db.models import F, ExpressionWrapper, fields
+from django.contrib.auth.decorators import login_required
+from .models import Notification
 
 # --- Permission Helpers (Should be moved to a central utility module) ---
 
@@ -111,3 +113,25 @@ def attendance_report(request):
         return JsonResponse({'error': 'Invalid date format. Please use YYYY-MM-DD.'}, status=400)
     except Exception as e:
         return JsonResponse({'error': f'An unexpected error occurred: {str(e)}'}, status=500)
+
+
+@login_required
+def get_my_notifications(request):
+    """
+    Returns the latest 10 notifications for the current user.
+    """
+    try:
+        notifications = Notification.objects.filter(user=request.user).order_by('-sent_at')[:10]
+        data = []
+        for n in notifications:
+            data.append({
+                'id': str(n.id),
+                'type': n.type,
+                'message': n.message,
+                'status': n.status,
+                'sent_at': n.sent_at.isoformat(),
+                'time_ago': n.sent_at.strftime('%b %d, %H:%M')
+            })
+        return JsonResponse({'success': True, 'notifications': data})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)

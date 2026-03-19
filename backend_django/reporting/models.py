@@ -1,18 +1,28 @@
 import uuid
 from django.db import models
+from accounts.models import User
+
+# 15. Audit Logs Table
+class AuditLog(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, db_column='_id')
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, db_column='userId')
+    action = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    timestamp = models.DateTimeField(auto_now_add=True)
+    ip_address = models.GenericIPAddressField(blank=True, null=True)
 
 # 16. Report Table
 class Report(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, db_column='_id')
-    
-    class ReportType(models.TextChoices):
-        ATTENDANCE = 'ATTENDANCE', 'Attendance'
-        PERFORMANCE = 'PERFORMANCE', 'Performance'
-        LEAVE = 'LEAVE', 'Leave'
-        
-    type = models.CharField(max_length=50, choices=ReportType.choices)
-    parameters = models.JSONField()
-    generated_at = models.DateTimeField(auto_now_add=True, db_column='generatedAt')
+    type = models.CharField(max_length=50)
+    parameters = models.JSONField(null=True, blank=True)
+    generated_at = models.DateTimeField(auto_now_add=True)
 
-    def __str__(self):
-        return f"{self.get_type_display()} Report generated at {self.generated_at}"
+# 17. Notification Table
+class Notification(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, db_column='_id')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, db_column='userId')
+    type = models.CharField(max_length=50)
+    message = models.TextField()
+    status = models.CharField(max_length=50)
+    sent_at = models.DateTimeField(auto_now_add=True)

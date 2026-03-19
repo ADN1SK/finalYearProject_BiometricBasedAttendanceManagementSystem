@@ -15,4 +15,6 @@ urlpatterns = [
     path('assignments/', views.assignment_list_create, name='assignment_list_create'),
     # DELETE a specific assignment
     path('assignments/<uuid:assignment_id>/', views.assignment_detail, name='assignment_detail'),
+    # GET user's personal assignments
+    path('my-assignments/', views.my_assignments, name='my_assignments'),
 ]
