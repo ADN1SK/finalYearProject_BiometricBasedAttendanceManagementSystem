@@ -136,6 +136,7 @@ export const AttendanceRecordsView = () => {
                 )}
               </tbody>
             </table>
+            
           </div>
         )}
       </div>

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, 
   Users, 
@@ -24,32 +25,38 @@ interface DashboardLayoutProps {
   user: User;
   onLogout: () => void;
   children: React.ReactNode;
-  activeTab: string;
-  setActiveTab: (tab: string) => void;
 }
 
-export const DashboardLayout = ({ user, onLogout, children, activeTab, setActiveTab }: DashboardLayoutProps) => {
+export const DashboardLayout = ({ user, onLogout, children }: DashboardLayoutProps) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const navigate = useNavigate();
+  const location = useLocation();
 
   const menuItems = [
-    { id: 'overview', label: 'Admin Dashboard', icon: LayoutDashboard, roles: ['ADMIN'] },
-    { id: 'overview', label: 'Dashboard', icon: LayoutDashboard, roles: ['HR_OFFICER', 'EMPLOYEE'] },
-    { id: 'user-management', label: 'User & Role Management', icon: Users, roles: ['ADMIN'] },
-    { id: 'biometric-enrollment', label: 'Biometric Enrollment', icon: Fingerprint, roles: ['ADMIN'] },
-    { id: 'leave-approval', label: 'Leave Approval', icon: Calendar, roles: ['HR_OFFICER'] },
-    { id: 'shift-management', label: 'Shift Management', icon: Clock, roles: ['HR_OFFICER'] },
-    { id: 'profile-management', label: 'Profile Management', icon: UserIcon, roles: ['HR_OFFICER'] },
-    { id: 'policies', label: 'Policy Configuration', icon: Settings, roles: ['ADMIN'] },
-    { id: 'system-setup', label: 'Workflow & Setup', icon: FileText, roles: ['ADMIN'] },
-    { id: 'integrations', label: 'External Integrations', icon: Shield, roles: ['ADMIN'] },
-    { id: 'audit-logs', label: 'System Oversight', icon: AlertCircle, roles: ['ADMIN'] },
-    { id: 'attendance', label: 'Attendance Record', icon: Clock, roles: ['ADMIN', 'HR_OFFICER', 'EMPLOYEE'] },
-    { id: 'leaves', label: 'Leave Management', icon: Calendar, roles: ['ADMIN', 'HR_OFFICER', 'EMPLOYEE'] },
-    { id: 'notifications', label: 'Notifications', icon: Bell, roles: ['ADMIN', 'HR_OFFICER', 'EMPLOYEE'] },
-    { id: 'about', label: 'About Project', icon: FileText, roles: ['ADMIN', 'HR_OFFICER', 'EMPLOYEE'] },
+    { id: 'overview', path: '/', label: 'Admin Dashboard', icon: LayoutDashboard, roles: ['ADMIN'] },
+    { id: 'overview', path: '/', label: 'Dashboard', icon: LayoutDashboard, roles: ['HR_OFFICER', 'EMPLOYEE'] },
+    { id: 'usermanagement', path: '/usermanagement', label: 'User & Role Management', icon: Users, roles: ['ADMIN'] },
+    { id: 'biometricenrollmentview', path: '/biometricenrollmentview', label: 'Biometric Enrollment', icon: Fingerprint, roles: ['ADMIN'] },
+    { id: 'leaveapproval', path: '/leaveapproval', label: 'Leave Approval', icon: Calendar, roles: ['HR_OFFICER'] },
+    { id: 'shiftmanagement', path: '/shiftmanagement', label: 'Shift Management', icon: Clock, roles: ['HR_OFFICER'] },
+    { id: 'profilemanagement', path: '/profilemanagement', label: 'Profile Management', icon: UserIcon, roles: ['HR_OFFICER'] },
+    { id: 'policies', path: '/policies', label: 'Policy Configuration', icon: Settings, roles: ['ADMIN'] },
+    { id: 'systemsetup', path: '/systemsetup', label: 'Workflow & Setup', icon: FileText, roles: ['ADMIN'] },
+    { id: 'integrations', path: '/integrations', label: 'External Integrations', icon: Shield, roles: ['ADMIN'] },
+    { id: 'auditlogs', path: '/auditlogs', label: 'System Oversight', icon: AlertCircle, roles: ['ADMIN'] },
+    { id: 'attendance', path: '/attendancerecords', label: 'Attendance Record', icon: Clock, roles: ['ADMIN', 'HR_OFFICER', 'EMPLOYEE'] },
+    { id: 'leaves', path: '/leavemanagement', label: 'Leave Management', icon: Calendar, roles: ['ADMIN', 'HR_OFFICER', 'EMPLOYEE'] },
+    { id: 'notifications', path: '/notifications', label: 'Notifications', icon: Bell, roles: ['ADMIN', 'HR_OFFICER', 'EMPLOYEE'] },
+    { id: 'about', path: '/about', label: 'About Project', icon: FileText, roles: ['ADMIN', 'HR_OFFICER', 'EMPLOYEE'] },
   ];
 
   const filteredMenu = menuItems.filter(item => item.roles.includes(user.role));
+
+  const isActive = (path: string) => {
+    if (path === '/' && location.pathname === '/') return true;
+    if (path !== '/' && location.pathname.startsWith(path)) return true;
+    return false;
+  };
 
   return (
     <div className="min-h-screen flex bg-slate-50">
@@ -57,9 +64,10 @@ export const DashboardLayout = ({ user, onLogout, children, activeTab, setActive
       <AnimatePresence mode="wait">
         {isSidebarOpen && (
           <motion.aside 
-            initial={{ x: -300 }}
+            initial={{ x: -280 }}
             animate={{ x: 0 }}
-            exit={{ x: -300 }}
+            exit={{ x: -280 }}
+            transition={{ type: "spring", damping: 25, stiffness: 200 }}
             className="w-72 bg-white border-r border-slate-200 flex flex-col z-20 fixed inset-y-0 lg:relative shadow-sm"
           >
             <div className="p-6 text-center border-b border-slate-100">
@@ -78,13 +86,13 @@ export const DashboardLayout = ({ user, onLogout, children, activeTab, setActive
             </div>
 
             <nav className="flex-1 px-4 py-6 overflow-y-auto space-y-1">
-              {filteredMenu.map((item) => (
+              {filteredMenu.map((item, index) => (
                 <SidebarItem
-                  key={item.id}
+                  key={`${item.id}-${index}`}
                   icon={item.icon}
                   label={item.label}
-                  active={activeTab === item.id}
-                  onClick={() => setActiveTab(item.id)}
+                  active={isActive(item.path)}
+                  onClick={() => navigate(item.path)}
                 />
               ))}
             </nav>
@@ -133,7 +141,18 @@ export const DashboardLayout = ({ user, onLogout, children, activeTab, setActive
         </header>
 
         <main className="flex-1 p-8 overflow-y-auto">
-          {children}
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={location.pathname}
+              initial={{ opacity: 0, x: 10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -10 }}
+              transition={{ duration: 0.2 }}
+              className="w-full"
+            >
+              {children}
+            </motion.div>
+          </AnimatePresence>
         </main>
       </div>
     </div>

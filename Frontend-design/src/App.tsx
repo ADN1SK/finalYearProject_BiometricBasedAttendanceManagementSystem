@@ -5,6 +5,7 @@
 
 import React, { useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { User } from './types';
 
 // Layouts
@@ -29,17 +30,23 @@ import { ExternalIntegrationView } from './views/ExternalIntegrationView';
 import { AboutProjectView } from './views/AboutProjectView';
 
 export default function App() {
-  const [user, setUser] = useState<User | null>(null);
-  const [activeTab, setActiveTab] = useState('overview');
+  const [user, setUser] = useState<User | null>(() => {
+    const saved = localStorage.getItem('eams_user');
+    try {
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
 
   const handleLogin = (loggedInUser: User) => {
+    localStorage.setItem('eams_user', JSON.stringify(loggedInUser));
     setUser(loggedInUser);
-    setActiveTab('overview');
   };
 
   const handleLogout = () => {
+    localStorage.removeItem('eams_user');
     setUser(null);
-    setActiveTab('overview');
   };
 
   if (!user) {
@@ -47,38 +54,29 @@ export default function App() {
   }
 
   return (
-    <DashboardLayout 
-      user={user} 
-      onLogout={handleLogout} 
-      activeTab={activeTab} 
-      setActiveTab={setActiveTab}
-    >
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={activeTab}
-          initial={{ opacity: 0, x: 10 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: -10 }}
-          transition={{ duration: 0.2 }}
-          className="w-full"
-        >
-          {activeTab === 'overview' && <OverviewView user={user} />}
-          {activeTab === 'biometric-enrollment' && <BiometricEnrollmentView />}
-          {activeTab === 'leave-approval' && <LeaveApprovalView user={user} />}
-          {activeTab === 'shift-management' && <ShiftManagementView user={user} />}
-          {activeTab === 'profile-management' && <ProfileManagementView />}
-          {activeTab === 'reports' && <ReportGenerationView user={user} />}
-          {activeTab === 'user-management' && <UserManagementView />}
-          {activeTab === 'attendance-records' && <AttendanceRecordsView />}
-          {activeTab === 'leave-management' && <LeaveManagementView user={user} />}
-          {activeTab === 'notifications' && <NotificationsView />}
-          {activeTab === 'policies' && <PolicyConfigurationView user={user} />}
-          {activeTab === 'system-setup' && <SystemSetupView />}
-          {activeTab === 'audit-logs' && <AuditMonitoringView user={user} />}
-          {activeTab === 'integrations' && <ExternalIntegrationView />}
-          {activeTab === 'about' && <AboutProjectView />}
-        </motion.div>
-      </AnimatePresence>
-    </DashboardLayout>
+    <BrowserRouter>
+      <DashboardLayout user={user} onLogout={handleLogout}>
+        <Routes>
+          <Route path="/" element={<OverviewView user={user} />} />
+          <Route path="/dashboard" element={<Navigate to="/" replace />} />
+          <Route path="/biometricenrollmentview" element={<BiometricEnrollmentView />} />
+          <Route path="/leaveapproval" element={<LeaveApprovalView user={user} />} />
+          <Route path="/shiftmanagement" element={<ShiftManagementView user={user} />} />
+          <Route path="/profilemanagement" element={<ProfileManagementView />} />
+          <Route path="/reports" element={<ReportGenerationView user={user} />} />
+          <Route path="/usermanagement" element={<UserManagementView />} />
+          <Route path="/attendancerecords" element={<AttendanceRecordsView />} />
+          <Route path="/leavemanagement" element={<LeaveManagementView user={user} />} />
+          <Route path="/notifications" element={<NotificationsView />} />
+          <Route path="/policies" element={<PolicyConfigurationView user={user} />} />
+          <Route path="/systemsetup" element={<SystemSetupView />} />
+          <Route path="/auditlogs" element={<AuditMonitoringView user={user} />} />
+          <Route path="/integrations" element={<ExternalIntegrationView />} />
+          <Route path="/about" element={<AboutProjectView />} />
+          {/* Fallback */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </DashboardLayout>
+    </BrowserRouter>
   );
 }
