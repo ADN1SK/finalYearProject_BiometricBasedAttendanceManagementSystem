@@ -18,13 +18,17 @@ export const OverviewView = ({ user }: OverviewViewProps) => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [statsRes, historyRes] = await Promise.all([
-          apiRequest('/api/attendance/my-stats/'),
-          apiRequest('/api/attendance/my-history/')
-        ]);
-
-        if (statsRes.success) setStats(statsRes.stats);
-        if (historyRes.success) setHistory(historyRes.records);
+        if (user.role === 'ADMIN') {
+          const statsRes = await apiRequest('/api/attendance/admin-stats/');
+          if (statsRes.success) setStats(statsRes.stats);
+        } else {
+          const [statsRes, historyRes] = await Promise.all([
+            apiRequest('/api/attendance/my-stats/'),
+            apiRequest('/api/attendance/my-history/')
+          ]);
+          if (statsRes.success) setStats(statsRes.stats);
+          if (historyRes.success) setHistory(historyRes.records);
+        }
       } catch (err) {
         console.error("Failed to fetch dashboard data", err);
       } finally {
@@ -33,7 +37,7 @@ export const OverviewView = ({ user }: OverviewViewProps) => {
     };
 
     fetchData();
-  }, [user.id]);
+  }, [user.id, user.role]);
 
   if (user.role === 'HR_OFFICER') {
     // ... (rest of HR view, keeping mock for now as backend doesn't have HR overview API yet)
@@ -44,7 +48,7 @@ export const OverviewView = ({ user }: OverviewViewProps) => {
   }
 
   // Employee View (Integrated)
-  const employeeAttendance = history.length > 0 ? history : MOCK_ATTENDANCE.filter(r => r.userId === user.id);
+  const employeeAttendance = history.length > 0 ? history : (MOCK_ATTENDANCE as any[]).filter(r => r.userId === user.id);
   const employeeLeaves = MOCK_LEAVES.filter(l => l.userId === user.id);
   const currentShift = MOCK_SHIFTS[0];
 

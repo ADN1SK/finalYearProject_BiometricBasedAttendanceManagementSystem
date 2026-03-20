@@ -12,16 +12,18 @@ export interface User {
   role: UserRole;
   department: string;
   avatar?: string;
+  status?: 'ACTIVE' | 'SUSPENDED';
+  enrolled?: boolean;
 }
 
 export interface AttendanceRecord {
   id: string;
-  userId: string;
+  username: string;
   date: string;
-  checkIn: string;
-  checkOut?: string;
-  status: 'ON_TIME' | 'LATE' | 'EARLY_EXIT' | 'ABSENT';
-  workHours: number;
+  time: string;
+  type: string;
+  status: string;
+  timestamp: string;
 }
 
 export interface LeaveRequest {

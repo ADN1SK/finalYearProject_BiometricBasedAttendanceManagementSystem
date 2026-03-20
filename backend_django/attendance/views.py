@@ -339,6 +339,61 @@ def get_my_attendance_history(request):
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
+@staff_member_required
+def api_admin_stats(request):
+    """Returns global statistics for the Admin dashboard."""
+    try:
+        now = timezone.now()
+        today = now.date()
+        
+        total_employees = User.objects.filter(is_active=True).count()
+        present_today = AttendanceRecord.objects.filter(
+            timestamp__date=today, 
+            type=AttendanceRecord.RecordType.CHECK_IN
+        ).values('user').distinct().count()
+        
+        late_today = AttendanceRecord.objects.filter(
+            timestamp__date=today,
+            status=AttendanceRecord.RecordStatus.LATE
+        ).values('user').distinct().count()
+        
+        # Simple absenteeism: Total - Present
+        # (In a real system, you'd check against schedules)
+        absent_today = total_employees - present_today
+        
+        return JsonResponse({
+            'success': True,
+            'stats': {
+                'totalEmployees': total_employees,
+                'presentToday': present_today,
+                'absentToday': absent_today,
+                'lateToday': late_today,
+                'pendingLeaves': 5 # Placeholder until Leave integration
+            }
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+@staff_member_required
+def api_list_all_attendance(request):
+    """Lists attendance records for all users (Admin view)."""
+    try:
+        records = AttendanceRecord.objects.all().select_related('user').order_by('-timestamp')[:100]
+        data = []
+        for r in records:
+            data.append({
+                'id': str(r.id),
+                'username': r.user.username,
+                'timestamp': r.timestamp.isoformat(),
+                'type': r.get_type_display(),
+                'status': r.get_status_display(),
+                'date': r.timestamp.date().strftime('%b %d, %Y'),
+                'time': r.timestamp.time().strftime('%H:%M %p')
+            })
+        return JsonResponse({'success': True, 'records': data})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
 @login_required
 def get_my_attendance_stats(request):
     """

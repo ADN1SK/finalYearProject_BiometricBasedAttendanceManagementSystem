@@ -16,7 +16,8 @@ from django.http import JsonResponse
 from django.contrib.auth import get_user_model, authenticate, login, logout
 from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 
-from .models import EmployeeDetail, BiometricTemplate
+from django.utils import timezone
+from .models import EmployeeDetail, BiometricTemplate, Department, Role, UserRole
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -72,10 +73,10 @@ def api_logout(request):
 
 def api_list_users(request):
     """Returns a list of all users for enrollment selection."""
-    users = User.objects.all()
+    users = User.objects.all().select_related('employeedetail__department')
     user_list = []
     for u in users:
-        detail = EmployeeDetail.objects.filter(user=u).first()
+        detail = getattr(u, 'employeedetail', None)
         dept = detail.department.name if detail and detail.department else "No Department"
         role = 'Employee'
         if u.is_administrator:
@@ -89,9 +90,64 @@ def api_list_users(request):
             'email': u.email,
             'role': role,
             'department': dept,
-            'enrolled': detail.biometric_enrolled if detail else False
+            'enrolled': detail.biometric_enrolled if detail else False,
+            'status': u.status
         })
     return JsonResponse({'success': True, 'users': user_list})
+
+
+def api_list_departments(request):
+    departments = Department.objects.all().values('id', 'name')
+    return JsonResponse({'success': True, 'departments': list(departments)})
+
+
+@csrf_exempt
+def api_create_user(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    
+    try:
+        data = json.loads(request.body)
+        username = data.get('username')
+        password = data.get('password')
+        email = data.get('email', f"{username}@example.com")
+        role_name = data.get('role', Role.EMPLOYEE)
+        dept_id = data.get('department_id')
+        
+        if User.objects.filter(username=username).exists():
+            return JsonResponse({'success': False, 'error': 'Username already exists'})
+            
+        user = User.objects.create_user(username=username, password=password, email=email)
+        
+        # Assign Role
+        role, _ = Role.objects.get_or_create(name=role_name)
+        UserRole.objects.create(user=user, role=role)
+        
+        # Create EmployeeDetail
+        EmployeeDetail.objects.create(
+            user=user,
+            department_id=dept_id,
+            hire_date=timezone.now().date()
+        )
+        
+        return JsonResponse({'success': True, 'message': 'User created successfully'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@csrf_exempt
+def api_update_user(request, user_id):
+    user = get_object_or_404(User, id=user_id)
+    if request.method == 'PATCH':
+        try:
+            data = json.loads(request.body)
+            if 'status' in data:
+                user.status = data['status']
+                user.save()
+            return JsonResponse({'success': True})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)}, status=400)
+    return JsonResponse({'error': 'PATCH required'}, status=405)
 
 
 # FAST DETECTOR (for /face/check/)
