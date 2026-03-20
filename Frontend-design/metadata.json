@@ -1,0 +1,7 @@
+{
+  "name": "BBE AMS-HU IOT",
+  "description": "Biometric-Based Employee Attendance Management System for Hawassa University Institute of Technology",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

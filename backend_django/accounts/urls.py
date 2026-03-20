@@ -8,6 +8,7 @@ urlpatterns = [
     path('api/csrf/', views.get_csrf, name='get_csrf'),
     path('api/login/', views.api_login, name='api_login'),
     path('api/logout/', views.api_logout, name='api_logout'),
+    path('api/users/', views.api_list_users, name='api_user_list'),
     
     # Biometrics
     path('user/<uuid:user_id>/capture/', views.capture_face, name='capture_face'),

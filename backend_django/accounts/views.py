@@ -70,6 +70,30 @@ def api_logout(request):
     return JsonResponse({'success': True})
 
 
+def api_list_users(request):
+    """Returns a list of all users for enrollment selection."""
+    users = User.objects.all()
+    user_list = []
+    for u in users:
+        detail = EmployeeDetail.objects.filter(user=u).first()
+        dept = detail.department.name if detail and detail.department else "No Department"
+        role = 'Employee'
+        if u.is_administrator:
+            role = 'Administrator'
+        elif u.is_hr_officer:
+            role = 'HR Officer'
+            
+        user_list.append({
+            'id': str(u.id),
+            'name': u.username,
+            'email': u.email,
+            'role': role,
+            'department': dept,
+            'enrolled': detail.biometric_enrolled if detail else False
+        })
+    return JsonResponse({'success': True, 'users': user_list})
+
+
 # FAST DETECTOR (for /face/check/)
 # =====================================
 
