@@ -21,6 +21,7 @@ from .models import EmployeeDetail, BiometricTemplate
 User = get_user_model()
 logger = logging.getLogger(__name__)
 
+
 # =====================================
 # AUTHENTICATION Endpoints for SPA
 # =====================================
@@ -28,6 +29,7 @@ logger = logging.getLogger(__name__)
 @ensure_csrf_cookie
 def get_csrf(request):
     return JsonResponse({'success': 'CSRF cookie set'})
+
 
 @csrf_exempt
 def api_login(request):
@@ -39,16 +41,16 @@ def api_login(request):
             user = authenticate(request, username=username, password=password)
             if user is not None:
                 login(request, user)
-                
+
                 # Determine highest role for UI purposes
                 role = 'Employee'
                 if user.is_administrator:
                     role = 'Administrator'
                 elif user.is_hr_officer:
                     role = 'HR Officer'
-                    
+
                 return JsonResponse({
-                    'success': True, 
+                    'success': True,
                     'user': {
                         'id': str(user.id),
                         'username': user.username,
@@ -61,10 +63,13 @@ def api_login(request):
             return JsonResponse({'success': False, 'error': str(e)}, status=400)
     return JsonResponse({'error': 'POST required'}, status=405)
 
+
 @csrf_exempt
 def api_logout(request):
     logout(request)
     return JsonResponse({'success': True})
+
+
 # FAST DETECTOR (for /face/check/)
 # =====================================
 
@@ -72,7 +77,6 @@ face_cascade = cv2.CascadeClassifier(
     cv2.data.haarcascades +
     "haarcascade_frontalface_default.xml"
 )
-
 
 # =====================================
 # ACCURATE DETECTOR (for enrollment)
@@ -85,7 +89,6 @@ except Exception as e:
     logger.error(e)
     detector = None
 
-
 # =====================================
 # CACHE
 # =====================================
@@ -96,7 +99,6 @@ known_usernames = []
 
 
 def load_known_embeddings():
-
     global known_embeddings
     global known_user_ids
     global known_usernames
@@ -127,9 +129,8 @@ def load_known_embeddings():
 
 load_known_embeddings()
 
-
 # =====================================
-# CHALLENGES
+# CHALLENGES (Blink Removed)
 # =====================================
 
 CHALLENGES = [
@@ -138,12 +139,6 @@ CHALLENGES = [
         "type": "center",
         "text": "Look Forward",
         "instruction": "Look straight"
-    },
-
-    {
-        "type": "blink",
-        "text": "Blink",
-        "instruction": "Blink eyes"
     },
 
     {
@@ -167,7 +162,6 @@ CHALLENGES = [
 
 @csrf_exempt
 def check_face(request):
-
     try:
 
         data = json.loads(
@@ -229,14 +223,12 @@ def check_face(request):
 
 @staff_member_required
 def capture_face(request, user_id):
-
     user = get_object_or_404(
         User,
         pk=user_id
     )
 
     if request.method == "GET":
-
         request.session.pop(
             "face_frames",
             None
@@ -272,7 +264,6 @@ def capture_face(request, user_id):
         )
 
         if not frames:
-
             return JsonResponse(
                 {
                     "success": False,
@@ -341,7 +332,6 @@ def capture_face(request, user_id):
             )
 
         if len(valid_frames) < 8:
-
             return JsonResponse(
                 {
                     "success": False,
@@ -350,8 +340,8 @@ def capture_face(request, user_id):
             )
 
         move = (
-            movements[-1]
-            - movements[0]
+                movements[-1]
+                - movements[0]
         )
 
         # ==========
@@ -359,7 +349,6 @@ def capture_face(request, user_id):
         # ==========
 
         if challenge == "left" and move > -20:
-
             return JsonResponse(
                 {
                     "success": False,
@@ -368,7 +357,6 @@ def capture_face(request, user_id):
             )
 
         if challenge == "right" and move < 20:
-
             return JsonResponse(
                 {
                     "success": False,
@@ -376,33 +364,7 @@ def capture_face(request, user_id):
                 }
             )
 
-        if challenge == "blink":
-
-            eye_moves = []
-
-            for f in valid_frames:
-
-                e1, e2 = f["eyes"]
-
-                eye_moves.append(
-                    abs(
-                        e1[1]
-                        - e2[1]
-                    )
-                )
-
-            if (
-                max(eye_moves)
-                - min(eye_moves)
-                < 4
-            ):
-
-                return JsonResponse(
-                    {
-                        "success": False,
-                        "error": "Blink not detected",
-                    }
-                )
+        # Blink validation block removed from here
 
         # ==========
         # STORE
@@ -416,7 +378,6 @@ def capture_face(request, user_id):
         face_data = []
 
         for f in valid_frames:
-
             x, y, w, h = f["box"]
 
             face = f["image"][
@@ -460,17 +421,16 @@ def capture_face(request, user_id):
         # ==========
 
         if step >= len(
-            CHALLENGES
+                CHALLENGES
         ) - 1:
 
             all_faces = []
 
             for i in range(
-                len(
-                    CHALLENGES
-                )
+                    len(
+                        CHALLENGES
+                    )
             ):
-
                 all_faces.extend(
                     request.session[
                         "face_frames"
@@ -521,9 +481,8 @@ def capture_face(request, user_id):
                     logger.error(e)
 
             if len(
-                embeddings
+                    embeddings
             ) < 5:
-
                 return JsonResponse(
                     {
                         "success": False,
@@ -547,24 +506,24 @@ def capture_face(request, user_id):
                 )
 
                 q = q / (
-                    np.linalg.norm(
-                        q
-                    )
-                    + 1e-7
+                        np.linalg.norm(
+                            q
+                        )
+                        + 1e-7
                 )
 
                 best_i = -1
                 best_s = 0
 
                 for i, emb in enumerate(
-                    known_embeddings
+                        known_embeddings
                 ):
 
                     e = emb / (
-                        np.linalg.norm(
-                            emb
-                        )
-                        + 1e-7
+                            np.linalg.norm(
+                                emb
+                            )
+                            + 1e-7
                     )
 
                     sim = np.dot(
@@ -573,24 +532,22 @@ def capture_face(request, user_id):
                     )
 
                     if (
-                        sim > 0.8
-                        and sim
-                        > best_s
+                            sim > 0.8
+                            and sim
+                            > best_s
                     ):
-
                         best_s = sim
                         best_i = i
 
                 if (
-                    best_i != -1
-                    and known_user_ids[
-                        best_i
-                    ]
-                    != str(
-                        user.id
-                    )
+                        best_i != -1
+                        and known_user_ids[
+                    best_i
+                ]
+                        != str(
+                    user.id
+                )
                 ):
-
                     return JsonResponse(
                         {
                             "success": False,
@@ -639,7 +596,7 @@ def capture_face(request, user_id):
                 "next_step": step + 1,
                 "next_challenge": CHALLENGES[
                     step + 1
-                ],
+                    ],
             }
         )
 
