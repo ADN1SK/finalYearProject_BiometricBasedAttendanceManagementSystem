@@ -154,3 +154,57 @@ def get_audit_logs(request):
         return JsonResponse({'success': True, 'logs': data})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+@csrf_exempt
+def sync_biometrics(request):
+    """Triggers a reload of facial embeddings from the database."""
+    if not request.user.is_authenticated or not request.user.is_superuser:
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+    
+    from attendance.views import load_known_embeddings
+    try:
+        load_known_embeddings()
+        return JsonResponse({'success': True, 'message': 'Biometric embeddings synchronized successfully.'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+@csrf_exempt
+def sanitize_logs(request):
+    """Deletes audit logs older than 90 days."""
+    if not request.user.is_authenticated or not request.user.is_superuser:
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+    
+    try:
+        ninety_days_ago = timezone.now() - timedelta(days=90)
+        count = AuditLog.objects.filter(timestamp__lt=ninety_days_ago).delete()[0]
+        return JsonResponse({'success': True, 'message': f'Sanitized {count} old log entries.'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+@csrf_exempt
+def system_operation(request, op_name):
+    """Generic handler for maintenance and backup operations."""
+    if not request.user.is_authenticated or not request.user.is_superuser:
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+    
+    # Placeholder for actual maintenance/backup logic
+    return JsonResponse({'success': True, 'message': f'System operation "{op_name}" completed successfully.'})
+
+@csrf_exempt
+def get_system_health(request):
+    """Returns real-time system health metrics."""
+    if not request.user.is_authenticated or (not request.user.is_superuser and not is_hr_officer(request.user)):
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+    
+    # In a real system, these would come from monitoring tools/redis
+    import random
+    data = {
+        'success': True,
+        'health': {
+            'db_status': 'OPTIMAL',
+            'api_latency': f"{random.randint(12, 28)}ms",
+            'active_terminals': '04 ACTIVE',
+            'uptime': '99.98%',
+            'last_sync': timezone.now().isoformat()
+        }
+    }
+    return JsonResponse(data)

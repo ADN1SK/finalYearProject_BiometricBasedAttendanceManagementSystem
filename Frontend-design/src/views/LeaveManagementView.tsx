@@ -6,6 +6,7 @@ import { apiRequest } from '../api/client';
 
 export const LeaveManagementView = ({ user }: { user: User }) => {
   const [leaves, setLeaves] = React.useState<any[]>([]);
+  const [summary, setSummary] = React.useState<any>(null);
   const [loading, setLoading] = React.useState(true);
   const [showRequestModal, setShowRequestModal] = React.useState(false);
   const [formData, setFormData] = React.useState({
@@ -18,7 +19,10 @@ export const LeaveManagementView = ({ user }: { user: User }) => {
   const fetchLeaves = async () => {
     try {
       const res = await apiRequest('/api/leave/api/my/');
-      if (res.success) setLeaves(res.leave_requests);
+      if (res.success) {
+        setLeaves(res.leave_requests);
+        setSummary(res.summary);
+      }
     } catch (err) {
       console.error("Failed to fetch leaves", err);
     } finally {
@@ -137,32 +141,32 @@ export const LeaveManagementView = ({ user }: { user: User }) => {
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="glass-card rounded-3xl p-6 border border-slate-100 space-y-2">
+        <div className="glass-card rounded-3xl p-6 border border-slate-100 space-y-2 bg-white/40">
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Annual Leave</p>
           <div className="flex items-end justify-between">
-            <h3 className="text-3xl font-black text-slate-900">14</h3>
+            <h3 className="text-3xl font-black text-slate-900">{String(summary?.annual_left ?? '--').padStart(2, '0')}</h3>
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Days Left</span>
           </div>
         </div>
-        <div className="glass-card rounded-3xl p-6 border border-slate-100 space-y-2">
+        <div className="glass-card rounded-3xl p-6 border border-slate-100 space-y-2 bg-white/40">
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sick Leave</p>
           <div className="flex items-end justify-between">
-            <h3 className="text-3xl font-black text-slate-900">08</h3>
+            <h3 className="text-3xl font-black text-slate-900">{String(summary?.sick_left ?? '--').padStart(2, '0')}</h3>
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Days Left</span>
           </div>
         </div>
-        <div className="glass-card rounded-3xl p-6 border border-slate-100 space-y-2">
+        <div className="glass-card rounded-3xl p-6 border border-slate-100 space-y-2 bg-white/40">
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pending Requests</p>
           <div className="flex items-end justify-between">
-            <h3 className="text-3xl font-black text-amber-600">02</h3>
+            <h3 className="text-3xl font-black text-amber-600">{String(summary?.pending_count ?? '--').padStart(2, '0')}</h3>
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Active</span>
           </div>
         </div>
-        <div className="glass-card rounded-3xl p-6 border border-slate-100 space-y-2">
+        <div className="glass-card rounded-3xl p-6 border border-slate-100 space-y-2 bg-white/40">
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Approved Leaves</p>
           <div className="flex items-end justify-between">
-            <h3 className="text-3xl font-black text-emerald-600">05</h3>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">This Year</span>
+            <h3 className="text-3xl font-black text-emerald-600">{String(summary?.approved_count ?? '--').padStart(2, '0')}</h3>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total</span>
           </div>
         </div>
       </div>

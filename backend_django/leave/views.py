@@ -87,7 +87,29 @@ def view_my_leave_requests(request):
             'status': req.get_status_display(),
             'approved_by': req.approved_by.username if req.approved_by else None
         } for req in requests]
-        return JsonResponse({'success': True, 'leave_requests': data})
+
+        # --- Calculate Dynamic Summary ---
+        # NOTE: In a production system, these allowances would be stored per-user.
+        ANNUAL_ALLOWANCE = 20
+        SICK_ALLOWANCE = 10
+        
+        annual_taken = 0
+        sick_taken = 0
+        for r in requests.filter(status=LeaveRequest.LeaveStatus.APPROVED):
+            days = (r.end_date - r.start_date).days + 1
+            if r.leave_type == LeaveRequest.LeaveType.ANNUAL:
+                annual_taken += days
+            elif r.leave_type == LeaveRequest.LeaveType.SICK:
+                sick_taken += days
+
+        summary = {
+            'annual_left': max(0, ANNUAL_ALLOWANCE - annual_taken),
+            'sick_left': max(0, SICK_ALLOWANCE - sick_taken),
+            'pending_count': requests.filter(status=LeaveRequest.LeaveStatus.PENDING).count(),
+            'approved_count': requests.filter(status=LeaveRequest.LeaveStatus.APPROVED).count()
+        }
+
+        return JsonResponse({'success': True, 'leave_requests': data, 'summary': summary})
 
     except Exception as e:
         return JsonResponse({'error': f'An unexpected error occurred: {str(e)}'}, status=500)

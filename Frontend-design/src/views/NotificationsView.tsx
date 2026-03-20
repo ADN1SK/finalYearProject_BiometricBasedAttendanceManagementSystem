@@ -1,18 +1,38 @@
 import React from 'react';
 import { Bell, Clock, CheckCircle2, AlertCircle, Info, MoreVertical, Search, Filter, Settings } from 'lucide-react';
 import { motion } from 'motion/react';
-import { MOCK_NOTIFICATIONS } from '../mockData';
-
+import { apiRequest } from '../api/client';
 export const NotificationsView = () => {
+  const [notifications, setNotifications] = React.useState<any[]>([]);
+  const [loading, setLoading] = React.useState(true);
+
+  const fetchNotifications = async () => {
+    try {
+      const res = await apiRequest('/api/reporting/my-notifications/');
+      if (res.success) setNotifications(res.notifications);
+    } catch (err) {
+      console.error("Failed to fetch notifications", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  React.useEffect(() => {
+    fetchNotifications();
+  }, []);
+
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-black text-slate-900 tracking-tight">Notifications</h1>
-          <p className="text-slate-500 mt-1 font-medium">Stay updated with the latest system alerts and messages.</p>
+          <p className="text-slate-500 mt-1 font-medium italic">Stay updated with the latest system alerts and messages.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="bg-white border border-slate-200 text-slate-600 font-black px-6 py-3 rounded-2xl transition-all hover:bg-slate-50 flex items-center gap-2 uppercase tracking-widest text-xs">
+          <button 
+            onClick={fetchNotifications}
+            className="bg-white border border-slate-200 text-slate-600 font-black px-6 py-3 rounded-2xl transition-all hover:bg-slate-50 flex items-center gap-2 uppercase tracking-widest text-xs"
+          >
             <CheckCircle2 className="w-4 h-4" />
             Mark all as read
           </button>
@@ -39,24 +59,32 @@ export const NotificationsView = () => {
       </div>
 
       <div className="space-y-4">
-        {MOCK_NOTIFICATIONS.map((notification) => (
+        {loading ? (
+          <div className="glass-card rounded-[2.5rem] p-12 text-center text-slate-400 font-bold italic border border-slate-100">
+            Fetching system alerts...
+          </div>
+        ) : notifications.length === 0 ? (
+          <div className="glass-card rounded-[2.5rem] p-12 text-center text-slate-400 font-bold italic border border-slate-100">
+            No new notifications.
+          </div>
+        ) : notifications.map((notification) => (
           <motion.div 
             key={notification.id}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             className={`glass-card rounded-3xl p-6 border border-slate-100 flex items-start gap-6 hover:shadow-lg transition-all ${
-              !notification.read ? 'bg-primary-50/30 border-primary-100' : ''
+              notification.status === 'UNREAD' ? 'bg-primary-50/30 border-primary-100' : ''
             }`}
           >
 
             <div className={`p-3 rounded-2xl ${
-              notification.severity === 'SUCCESS' ? 'bg-emerald-100 text-emerald-600' : 
-              notification.severity === 'WARNING' ? 'bg-amber-100 text-amber-600' : 
-              notification.severity === 'ERROR' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'
+              notification.type === 'SUCCESS' ? 'bg-emerald-100 text-emerald-600' : 
+              notification.type === 'WARNING' ? 'bg-amber-100 text-amber-600' : 
+              notification.type === 'ERROR' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'
             }`}>
-              {notification.severity === 'SUCCESS' ? <CheckCircle2 className="w-6 h-6" /> : 
-               notification.severity === 'WARNING' ? <AlertCircle className="w-6 h-6" /> : 
-               notification.severity === 'ERROR' ? <AlertCircle className="w-6 h-6" /> : <Info className="w-6 h-6" />}
+              {notification.type === 'SUCCESS' ? <CheckCircle2 className="w-6 h-6" /> : 
+               notification.type === 'WARNING' ? <AlertCircle className="w-6 h-6" /> : 
+               notification.type === 'ERROR' ? <AlertCircle className="w-6 h-6" /> : <Info className="w-6 h-6" />}
             </div>
 
             <div className="flex-1 min-w-0">

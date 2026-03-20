@@ -12,6 +12,7 @@ interface OverviewViewProps {
 export const OverviewView = ({ user }: OverviewViewProps) => {
   const [stats, setStats] = useState<any>(null);
   const [history, setHistory] = useState<any[]>([]);
+  const [health, setHealth] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -22,13 +23,15 @@ export const OverviewView = ({ user }: OverviewViewProps) => {
         if (user.role === 'ADMIN') statsEndpoint = '/api/attendance/admin-stats/';
         else if (user.role === 'HR_OFFICER') statsEndpoint = '/api/attendance/hr-stats/';
 
-        const [statsRes, historyRes] = await Promise.all([
+        const [statsRes, historyRes, healthRes] = await Promise.all([
           apiRequest(statsEndpoint),
-          user.role === 'EMPLOYEE' ? apiRequest('/api/attendance/my-history/') : Promise.resolve({ success: true, records: [] })
+          user.role === 'EMPLOYEE' ? apiRequest('/api/attendance/my-history/') : Promise.resolve({ success: true, records: [] }),
+          user.role === 'ADMIN' ? apiRequest('/api/reporting/system-health/') : Promise.resolve({ success: true, health: null })
         ]);
 
         if (statsRes.success) setStats(statsRes.stats);
         if (historyRes.success) setHistory(historyRes.records);
+        if (healthRes.success) setHealth(healthRes.health);
       } catch (err) {
         console.error("Failed to fetch dashboard data", err);
       } finally {
@@ -45,29 +48,33 @@ export const OverviewView = ({ user }: OverviewViewProps) => {
         <StatCard title="Total Staff" value={String(stats?.totalEmployees || 0)} icon={Users} colorClass="bg-blue-100 text-blue-600" delay={0.1} />
         <StatCard title="Present Today" value={String(stats?.presentToday || 0)} icon={CheckCircle2} colorClass="bg-emerald-100 text-emerald-600" delay={0.2} />
         <StatCard title="Absent" value={String(stats?.absentToday || 0)} icon={XCircle} colorClass="bg-red-100 text-red-600" delay={0.3} />
-        <StatCard title="Late Arrivals" value={String(stats?.lateToday || 0)} icon={Clock} colorClass="bg-amber-100 text-amber-600" delay={0.4} />
+        <StatCard title="Pending Leaves" value={String(stats?.pendingLeaves || 0)} icon={Clock} colorClass="bg-amber-100 text-amber-600" delay={0.4} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <div className="glass-card rounded-[2.5rem] p-10 border border-slate-100 bg-white/40 space-y-6 shadow-sm hover:shadow-xl transition-all">
           <h3 className="text-xl font-black text-slate-900 uppercase italic tracking-tight border-b border-slate-100 pb-4">Core Pillars</h3>
           <div className="grid grid-cols-2 gap-4">
-             {[
-               { name: 'System Oversight', label: 'Monitor Performance', icon: Activity, color: 'text-primary-600', bg: 'bg-primary-50' },
-               { name: 'User & Role Mgmt', label: 'Assign Permissions', icon: Shield, color: 'text-blue-600', bg: 'bg-blue-50' },
-               { name: 'Policy Config', label: 'Attendance Rules', icon: Settings, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-               { name: 'Workflow Mgmt', label: 'Execute Processes', icon: FileText, color: 'text-amber-600', bg: 'bg-amber-50' },
-             ].map((node, idx) => (
-               <div key={idx} className="p-4 bg-white rounded-2xl border border-slate-50 flex flex-col gap-3 group hover:border-primary-100 transition-colors">
-                  <div className={`w-10 h-10 rounded-xl ${node.bg} ${node.color} flex items-center justify-center`}>
+              {[
+                { name: 'System Oversight', label: 'Monitor Performance', icon: Activity, color: 'text-primary-600', bg: 'bg-primary-50', path: '/admin/' },
+                { name: 'User & Role Mgmt', label: 'Assign Permissions', icon: Shield, color: 'text-blue-600', bg: 'bg-blue-50', path: '/admin/accounts/user/' },
+                { name: 'Policy Config', label: 'Attendance Rules', icon: Settings, color: 'text-emerald-600', bg: 'bg-emerald-50', path: '/admin/leave/policy/' },
+                { name: 'Workflow Mgmt', label: 'Execute Processes', icon: FileText, color: 'text-amber-600', bg: 'bg-amber-50', path: '/admin/accounts/workflow/' },
+              ].map((node, idx) => (
+                <button 
+                  key={idx} 
+                  onClick={() => window.location.assign(`http://${window.location.hostname}:8000${node.path}`)}
+                  className="p-4 bg-white rounded-2xl border border-slate-50 flex flex-col gap-3 group hover:border-primary-100 transition-all text-left w-full"
+                >
+                  <div className={`w-10 h-10 rounded-xl ${node.bg} ${node.color} flex items-center justify-center group-hover:scale-110 transition-transform`}>
                     <node.icon className="w-5 h-5" />
                   </div>
                   <div>
                     <p className="text-[10px] font-black text-slate-900 uppercase tracking-widest">{node.name}</p>
                     <p className="text-[9px] text-slate-400 font-bold italic">{node.label}</p>
                   </div>
-               </div>
-             ))}
+                </button>
+              ))}
           </div>
         </div>
 
@@ -83,7 +90,7 @@ export const OverviewView = ({ user }: OverviewViewProps) => {
                   </div>
                   <div>
                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">Terminal Grid</p>
-                    <p className="text-xs font-black text-slate-900 italic">4 NODES ACTIVE</p>
+                    <p className="text-xs font-black text-slate-900 italic uppercase">{health?.active_terminals || 'SYNCHRONIZING'}</p>
                   </div>
                </div>
                <div className="bg-white p-5 rounded-2xl border border-primary-100 shadow-sm flex items-center gap-4">
@@ -92,11 +99,14 @@ export const OverviewView = ({ user }: OverviewViewProps) => {
                   </div>
                   <div>
                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">API Engine</p>
-                    <p className="text-xs font-black text-slate-900 italic">OPTIMAL - 18ms</p>
+                    <p className="text-xs font-black text-slate-900 italic uppercase">{health?.api_latency || 'OPTIMIZING'}</p>
                   </div>
                </div>
             </div>
-            <button className="w-full mt-6 py-4 bg-primary-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-primary-200 transition-all hover:bg-primary-700">
+            <button 
+              onClick={() => window.location.assign(`http://${window.location.hostname}:8000/admin/`)}
+              className="w-full mt-6 py-4 bg-primary-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-primary-200 transition-all hover:bg-primary-700"
+            >
               Run Full Diagnostic
             </button>
           </div>

@@ -33,17 +33,17 @@ export const DashboardLayout = ({ user, onLogout, children }: DashboardLayoutPro
   const location = useLocation();
 
   const menuItems = [
-    { id: 'overview', path: '/', label: 'Admin Dashboard', icon: LayoutDashboard, roles: ['ADMIN'] },
+    { id: 'overview', path: '/', label: 'Admin Dashboard', icon: LayoutDashboard, roles: ['ADMIN'], adminPath: '/admin/' },
     { id: 'overview', path: '/', label: 'Dashboard', icon: LayoutDashboard, roles: ['HR_OFFICER', 'EMPLOYEE'] },
-    { id: 'usermanagement', path: '/usermanagement', label: 'User & Role Management', icon: Users, roles: ['ADMIN'] },
+    { id: 'usermanagement', path: '/usermanagement', label: 'User & Role Management', icon: Users, roles: ['ADMIN'], adminPath: '/admin/accounts/user/' },
     { id: 'biometricenrollmentview', path: '/biometricenrollmentview', label: 'Biometric Enrollment', icon: Fingerprint, roles: ['ADMIN'] },
     { id: 'leaveapproval', path: '/leaveapproval', label: 'Leave Approval', icon: Calendar, roles: ['HR_OFFICER'] },
     { id: 'shiftmanagement', path: '/shiftmanagement', label: 'Shift Management', icon: Clock, roles: ['HR_OFFICER'] },
     { id: 'profilemanagement', path: '/profilemanagement', label: 'Profile Management', icon: UserIcon, roles: ['HR_OFFICER'] },
-    { id: 'policies', path: '/policies', label: 'Policy Configuration', icon: Settings, roles: ['ADMIN'] },
-    { id: 'systemsetup', path: '/systemsetup', label: 'Workflow & Setup', icon: FileText, roles: ['ADMIN'] },
+    { id: 'policies', path: '/policies', label: 'Policy Configuration', icon: Settings, roles: ['ADMIN'], adminPath: '/admin/leave/policy/' },
+    { id: 'systemsetup', path: '/systemsetup', label: 'Workflow & Setup', icon: FileText, roles: ['ADMIN'], adminPath: '/admin/accounts/workflow/' },
     { id: 'integrations', path: '/integrations', label: 'External Integrations', icon: Shield, roles: ['ADMIN'] },
-    { id: 'auditlogs', path: '/auditlogs', label: 'System Oversight', icon: AlertCircle, roles: ['ADMIN'] },
+    { id: 'auditlogs', path: '/auditlogs', label: 'System Oversight', icon: AlertCircle, roles: ['ADMIN'], adminPath: '/admin/' },
     { id: 'attendance', path: '/attendancerecords', label: 'Attendance Record', icon: Clock, roles: ['ADMIN', 'HR_OFFICER', 'EMPLOYEE'] },
     { id: 'leaves', path: '/leavemanagement', label: 'Leave Management', icon: Calendar, roles: ['ADMIN', 'HR_OFFICER', 'EMPLOYEE'] },
     { id: 'notifications', path: '/notifications', label: 'Notifications', icon: Bell, roles: ['ADMIN', 'HR_OFFICER', 'EMPLOYEE'] },
@@ -92,7 +92,13 @@ export const DashboardLayout = ({ user, onLogout, children }: DashboardLayoutPro
                   icon={item.icon}
                   label={item.label}
                   active={isActive(item.path)}
-                  onClick={() => navigate(item.path)}
+                  onClick={() => {
+                    if (user.role === 'ADMIN' && (item as any).adminPath) {
+                      window.location.assign(`http://${window.location.hostname}:8000${(item as any).adminPath}`);
+                    } else {
+                      navigate(item.path);
+                    }
+                  }}
                 />
               ))}
             </nav>
