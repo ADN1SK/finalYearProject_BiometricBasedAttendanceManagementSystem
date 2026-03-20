@@ -36,7 +36,7 @@ export const LoginView = ({ onLogin }: LoginViewProps) => {
     try {
       const response = await apiRequest('/accounts/api/login/', {
         method: 'POST',
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username, password, role: selectedRole }),
       });
 
       if (response.success) {

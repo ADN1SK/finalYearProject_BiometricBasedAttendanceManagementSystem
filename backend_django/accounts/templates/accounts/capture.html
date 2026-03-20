@@ -180,6 +180,11 @@
 <body>
 
 <div class="card">
+    <div style="position: absolute; top: 20px; right: 20px;">
+        <button onclick="window.location.href='http://' + window.location.hostname + ':3000'" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #94a3b8; padding: 8px 16px; border-radius: 12px; font-size: 11px; font-weight: 700; cursor: pointer; text-transform: uppercase; letter-spacing: 1px; transition: all 0.3s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'; this.style.color='#fff';" onmouseout="this.style.background='rgba(255,255,255,0.05)'; this.style.color='#94a3b8';">
+            Return to Dashboard
+        </button>
+    </div>
     <div class="header">
         <h1 class="title">Face Enrollment</h1>
         <div class="subtitle">Secure Biometric Identity</div>
@@ -289,10 +294,29 @@
             capturing = false;
             bar.style.width = "0%";
             if(d.success){
-                if(d.completed){
-                    statusText.innerText = "Identity Verified";
-                    msg.innerText = "Enrollment complete";
-                    setTimeout(()=>{ window.location.href = d.redirect; }, 1000);
+                if(d.can_verify){
+                    statusText.innerText = "Verifying Profile...";
+                    // Call the dedicated verify endpoint
+                    fetch(window.location.pathname.replace('/capture/', '/verify/'), {
+                        method: "POST",
+                        headers: {"X-CSRFToken": csrfToken}
+                    })
+                    .then(r=>r.json())
+                    .then(vd => {
+                        if(vd.success && vd.completed){
+                            statusText.innerText = "Identity Verified";
+                            msg.innerText = "Enrollment complete";
+                            setTimeout(()=>{ window.location.href = vd.redirect; }, 1000);
+                        } else {
+                            msg.innerText = vd.error || "Verification failed";
+                            stableCount = 0;
+                            capturing = false;
+                        }
+                    })
+                    .catch(() => {
+                        msg.innerText = "Verification connection error";
+                        capturing = false;
+                    });
                 }else{
                     step = d.next_step;
                     statusText.innerText = d.next_challenge.text;

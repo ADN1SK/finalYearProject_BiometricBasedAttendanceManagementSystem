@@ -441,3 +441,44 @@ def get_my_attendance_stats(request):
     except Exception as e:
         logger.exception(f"Error calculating stats: {e}")
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@login_required
+def api_hr_stats(request):
+    """Returns statistics for the HR Officer dashboard."""
+    from accounts.models import Role
+    try:
+        hr_role = Role.objects.get(name='HR Officer')
+        if not request.user.roles.filter(id=hr_role.id).exists() and not request.user.is_superuser:
+            return JsonResponse({'error': 'Permission denied'}, status=403)
+    except Role.DoesNotExist:
+        if not request.user.is_superuser:
+            return JsonResponse({'error': 'Role configuration error'}, status=500)
+
+    try:
+        now = timezone.now()
+        today = now.date()
+        
+        total_employees = User.objects.count()
+        present_today = AttendanceRecord.objects.filter(
+            timestamp__date=today, 
+            type=AttendanceRecord.RecordType.CHECK_IN
+        ).values('user').distinct().count()
+        
+        from leave.models import LeaveRequest
+        pending_leaves = LeaveRequest.objects.filter(status='PENDING').count()
+        
+        from scheduling.models import Shift
+        active_shifts = Shift.objects.count()
+
+        return JsonResponse({
+            'success': True,
+            'stats': {
+                'totalEmployees': total_employees,
+                'presentToday': present_today,
+                'pendingLeaves': pending_leaves,
+                'activeShifts': active_shifts
+            }
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)

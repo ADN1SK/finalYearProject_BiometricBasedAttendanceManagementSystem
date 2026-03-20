@@ -15,5 +15,6 @@ urlpatterns = [
     
     # Biometrics
     path('user/<uuid:user_id>/capture/', views.capture_face, name='capture_face'),
+    path('user/<uuid:user_id>/verify/', views.verify_face, name='verify_face'),
     path('face/check/', views.check_face, name='face_check'),
 ]

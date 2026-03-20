@@ -8,4 +8,5 @@ urlpatterns = [
     # Example: /api/reporting/attendance/?start_date=2023-01-01&end_date=2023-01-31
     path('attendance/', views.attendance_report, name='attendance_report'),
     path('my-notifications/', views.get_my_notifications, name='get_my_notifications'),
+    path('audit-logs/', views.get_audit_logs, name='get_audit_logs'),
 ]

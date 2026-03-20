@@ -170,3 +170,76 @@ def manage_leave_request(request, request_id):
             return JsonResponse({'error': 'Invalid status provided. Must be "APPROVED" or "REJECTED".'}, status=400)
 
     return JsonResponse({'error': 'Invalid request method'}, status=405)
+
+
+@csrf_exempt
+def policy_list_create(request):
+    user = get_user_from_request(request)
+    if not user or not is_hr_officer(user):
+        return JsonResponse({'error': 'Permission denied. HR Officer role required.'}, status=403)
+
+    if request.method == 'GET':
+        policies = Policy.objects.all()
+        data = [{
+            'id': p.id,
+            'name': p.name,
+            'description': p.description,
+            'value': p.value,
+            'is_active': p.is_active,
+        } for p in policies]
+        return JsonResponse({'success': True, 'policies': data})
+
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            policy = Policy.objects.create(
+                name=data['name'],
+                description=data.get('description', ''),
+                value=data['value'],
+                is_active=data.get('is_active', True)
+            )
+            return JsonResponse({'success': True, 'message': 'Policy created', 'id': policy.id}, status=201)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+def policy_detail(request, policy_id):
+    user = get_user_from_request(request)
+    if not user or not is_hr_officer(user):
+        return JsonResponse({'error': 'Permission denied. HR Officer role required.'}, status=403)
+
+    try:
+        policy = Policy.objects.get(pk=policy_id)
+    except Policy.DoesNotExist:
+        return JsonResponse({'error': 'Policy not found'}, status=404)
+
+    if request.method == 'GET':
+        return JsonResponse({
+            'success': True,
+            'policy': {
+                'id': policy.id,
+                'name': policy.name,
+                'description': policy.description,
+                'value': policy.value,
+                'is_active': policy.is_active,
+            }
+        })
+
+    if request.method == 'PUT':
+        try:
+            data = json.loads(request.body)
+            policy.name = data.get('name', policy.name)
+            policy.description = data.get('description', policy.description)
+            policy.value = data.get('value', policy.value)
+            policy.is_active = data.get('is_active', policy.is_active)
+            policy.save()
+            return JsonResponse({'success': True, 'message': 'Policy updated'})
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+
+    if request.method == 'DELETE':
+        policy.delete()
+        return JsonResponse({'success': True, 'message': 'Policy deleted'}, status=204)
+
+    return JsonResponse({'error': 'Method not allowed'}, status=405)

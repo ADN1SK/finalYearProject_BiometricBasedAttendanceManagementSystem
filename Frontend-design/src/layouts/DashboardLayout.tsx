@@ -32,16 +32,17 @@ export const DashboardLayout = ({ user, onLogout, children, activeTab, setActive
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   const menuItems = [
-    { id: 'overview', label: 'Dashboard', icon: LayoutDashboard, roles: ['ADMIN', 'HR_OFFICER', 'EMPLOYEE'] },
-    { id: 'user-management', label: 'User Management', icon: Users, roles: ['ADMIN'] },
-    { id: 'biometric-enrollment', label: 'Biometric Enrollment', icon: Fingerprint, roles: ['HR_OFFICER'] },
+    { id: 'overview', label: 'Admin Dashboard', icon: LayoutDashboard, roles: ['ADMIN'] },
+    { id: 'overview', label: 'Dashboard', icon: LayoutDashboard, roles: ['HR_OFFICER', 'EMPLOYEE'] },
+    { id: 'user-management', label: 'User & Role Management', icon: Users, roles: ['ADMIN'] },
+    { id: 'biometric-enrollment', label: 'Biometric Enrollment', icon: Fingerprint, roles: ['ADMIN'] },
     { id: 'leave-approval', label: 'Leave Approval', icon: Calendar, roles: ['HR_OFFICER'] },
     { id: 'shift-management', label: 'Shift Management', icon: Clock, roles: ['HR_OFFICER'] },
     { id: 'profile-management', label: 'Profile Management', icon: UserIcon, roles: ['HR_OFFICER'] },
     { id: 'policies', label: 'Policy Configuration', icon: Settings, roles: ['ADMIN'] },
-    { id: 'system-setup', label: 'System Setup', icon: FileText, roles: ['ADMIN'] },
+    { id: 'system-setup', label: 'Workflow & Setup', icon: FileText, roles: ['ADMIN'] },
     { id: 'integrations', label: 'External Integrations', icon: Shield, roles: ['ADMIN'] },
-    { id: 'audit', label: 'Audit Monitoring', icon: AlertCircle, roles: ['ADMIN'] },
+    { id: 'audit-logs', label: 'System Oversight', icon: AlertCircle, roles: ['ADMIN'] },
     { id: 'attendance', label: 'Attendance Record', icon: Clock, roles: ['ADMIN', 'HR_OFFICER', 'EMPLOYEE'] },
     { id: 'leaves', label: 'Leave Management', icon: Calendar, roles: ['ADMIN', 'HR_OFFICER', 'EMPLOYEE'] },
     { id: 'notifications', label: 'Notifications', icon: Bell, roles: ['ADMIN', 'HR_OFFICER', 'EMPLOYEE'] },

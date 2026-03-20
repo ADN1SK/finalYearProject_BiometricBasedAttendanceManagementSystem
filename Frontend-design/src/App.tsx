@@ -64,17 +64,17 @@ export default function App() {
         >
           {activeTab === 'overview' && <OverviewView user={user} />}
           {activeTab === 'biometric-enrollment' && <BiometricEnrollmentView />}
-          {activeTab === 'leave-approval' && <LeaveApprovalView />}
-          {activeTab === 'shift-management' && <ShiftManagementView />}
+          {activeTab === 'leave-approval' && <LeaveApprovalView user={user} />}
+          {activeTab === 'shift-management' && <ShiftManagementView user={user} />}
           {activeTab === 'profile-management' && <ProfileManagementView />}
-          {activeTab === 'reports' && <ReportGenerationView />}
+          {activeTab === 'reports' && <ReportGenerationView user={user} />}
           {activeTab === 'user-management' && <UserManagementView />}
           {activeTab === 'attendance-records' && <AttendanceRecordsView />}
-          {activeTab === 'leave-management' && <LeaveManagementView />}
+          {activeTab === 'leave-management' && <LeaveManagementView user={user} />}
           {activeTab === 'notifications' && <NotificationsView />}
-          {activeTab === 'policies' && <PolicyConfigurationView />}
+          {activeTab === 'policies' && <PolicyConfigurationView user={user} />}
           {activeTab === 'system-setup' && <SystemSetupView />}
-          {activeTab === 'audit-logs' && <AuditMonitoringView />}
+          {activeTab === 'audit-logs' && <AuditMonitoringView user={user} />}
           {activeTab === 'integrations' && <ExternalIntegrationView />}
           {activeTab === 'about' && <AboutProjectView />}
         </motion.div>

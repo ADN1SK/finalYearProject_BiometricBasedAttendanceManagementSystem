@@ -1,9 +1,51 @@
 import React from 'react';
 import { Calendar, Plus, Search, Filter, Download, User as UserIcon, CheckCircle2, AlertCircle, XCircle } from 'lucide-react';
 import { motion } from 'motion/react';
-import { MOCK_LEAVES, MOCK_USERS } from '../mockData';
+import { User } from '../types';
+import { apiRequest } from '../api/client';
 
-export const LeaveManagementView = () => {
+export const LeaveManagementView = ({ user }: { user: User }) => {
+  const [leaves, setLeaves] = React.useState<any[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [showRequestModal, setShowRequestModal] = React.useState(false);
+  const [formData, setFormData] = React.useState({
+    leave_type: 'ANNUAL',
+    start_date: '',
+    end_date: '',
+    reason: ''
+  });
+
+  const fetchLeaves = async () => {
+    try {
+      const res = await apiRequest('/api/leave/api/my/');
+      if (res.success) setLeaves(res.leave_requests);
+    } catch (err) {
+      console.error("Failed to fetch leaves", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  React.useEffect(() => {
+    fetchLeaves();
+  }, []);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await apiRequest('/api/leave/api/request/', {
+        method: 'POST',
+        body: JSON.stringify(formData)
+      });
+      if (res.success) {
+        setShowRequestModal(false);
+        fetchLeaves();
+        alert("Leave request submitted successfully!");
+      }
+    } catch (err: any) {
+      alert(err.message || "Failed to submit request");
+    }
+  };
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
@@ -11,11 +53,88 @@ export const LeaveManagementView = () => {
           <h1 className="text-3xl font-black text-slate-900 tracking-tight">Leave Management</h1>
           <p className="text-slate-500 mt-1 font-medium">Request and track employee leave applications.</p>
         </div>
-        <button className="bg-primary-600 hover:bg-primary-700 text-white font-black px-6 py-3 rounded-2xl transition-all shadow-lg shadow-primary-200 flex items-center gap-2 uppercase tracking-widest text-xs">
+        <button 
+          onClick={() => setShowRequestModal(true)}
+          className="bg-primary-600 hover:bg-primary-700 text-white font-black px-6 py-3 rounded-2xl transition-all shadow-lg shadow-primary-200 flex items-center gap-2 uppercase tracking-widest text-xs"
+        >
           <Plus className="w-4 h-4" />
           Request Leave
         </button>
       </div>
+
+      {showRequestModal && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white rounded-[2.5rem] p-8 w-full max-w-md shadow-2xl relative"
+          >
+            <h2 className="text-2xl font-black text-slate-900 mb-6">Request Leave</h2>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Leave Type</label>
+                <select 
+                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-4 text-sm focus:ring-2 focus:ring-primary-500 transition-all outline-none"
+                  value={formData.leave_type}
+                  onChange={e => setFormData({...formData, leave_type: e.target.value})}
+                >
+                  <option value="ANNUAL">Annual Leave</option>
+                  <option value="SICK">Sick Leave</option>
+                  <option value="MATERNITY">Maternity</option>
+                  <option value="UNPAID">Unpaid Leave</option>
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Start Date</label>
+                  <input 
+                    type="date"
+                    required
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-4 text-sm focus:ring-2 focus:ring-primary-500 transition-all outline-none"
+                    value={formData.start_date}
+                    onChange={e => setFormData({...formData, start_date: e.target.value})}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">End Date</label>
+                  <input 
+                    type="date"
+                    required
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-4 text-sm focus:ring-2 focus:ring-primary-500 transition-all outline-none"
+                    value={formData.end_date}
+                    onChange={e => setFormData({...formData, end_date: e.target.value})}
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Reason</label>
+                <textarea 
+                  required
+                  rows={3}
+                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-4 text-sm focus:ring-2 focus:ring-primary-500 transition-all outline-none"
+                  value={formData.reason}
+                  onChange={e => setFormData({...formData, reason: e.target.value})}
+                />
+              </div>
+              <div className="flex gap-4 pt-4">
+                <button 
+                  type="button"
+                  onClick={() => setShowRequestModal(false)}
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-black py-4 rounded-2xl transition-all"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  className="flex-1 bg-primary-600 hover:bg-primary-700 text-white font-black py-4 rounded-2xl transition-all"
+                >
+                  Submit
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         <div className="glass-card rounded-3xl p-6 border border-slate-100 space-y-2">
@@ -71,32 +190,35 @@ export const LeaveManagementView = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {MOCK_LEAVES.slice(0, 5).map((leave) => (
+              {loading ? (
+                <tr><td colSpan={4} className="px-8 py-10 text-center text-slate-400 font-bold">Loading...</td></tr>
+              ) : leaves.length === 0 ? (
+                <tr><td colSpan={4} className="px-8 py-10 text-center text-slate-400 font-bold">No leave requests found.</td></tr>
+              ) : leaves.map((leave) => (
                 <tr key={leave.id} className="hover:bg-slate-50/30 transition-colors group">
                   <td className="px-8 py-5">
                     <div className="flex items-center gap-3">
                       <div className={`p-2 rounded-xl ${
-                        leave.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-600' : 
-                        leave.status === 'PENDING' ? 'bg-amber-100 text-amber-600' : 'bg-red-100 text-red-600'
+                        leave.status === 'Approved' ? 'bg-emerald-100 text-emerald-600' : 
+                        leave.status === 'Pending' ? 'bg-amber-100 text-amber-600' : 'bg-red-100 text-red-600'
                       }`}>
                         <Calendar className="w-4 h-4" />
                       </div>
-                      <span className="text-sm font-bold text-slate-900">{leave.type} Leave</span>
+                      <span className="text-sm font-bold text-slate-900">{leave.leave_type}</span>
                     </div>
                   </td>
                   <td className="px-8 py-5">
                     <div className="flex flex-col">
-                      <span className="text-xs font-bold text-slate-600">{leave.startDate} - {leave.endDate}</span>
-                      <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">3 Days</span>
+                      <span className="text-xs font-bold text-slate-600">{leave.start_date} - {leave.end_date}</span>
                     </div>
                   </td>
                   <td className="px-8 py-5">
-                    <span className="text-xs font-medium text-slate-500 truncate max-w-[200px] block">{leave.reason}</span>
+                    <span className="text-xs font-medium text-slate-500 truncate max-w-[200px] block">View Details</span>
                   </td>
                   <td className="px-8 py-5 text-right">
                     <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
-                      leave.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-700' : 
-                      leave.status === 'PENDING' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
+                      leave.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' : 
+                      leave.status === 'Pending' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
                     }`}>
                       {leave.status}
                     </span>

@@ -5,7 +5,7 @@ from accounts.models import User, Role
 from datetime import datetime, timedelta
 from django.db.models import F, ExpressionWrapper, fields
 from django.contrib.auth.decorators import login_required
-from .models import Notification
+from .models import Notification, AuditLog
 
 # --- Permission Helpers (Should be moved to a central utility module) ---
 
@@ -135,3 +135,22 @@ def get_my_notifications(request):
         return JsonResponse({'success': True, 'notifications': data})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
+@csrf_exempt
+def get_audit_logs(request):
+    user = get_user_from_request(request)
+    if not user or not user.is_superuser: # Only superusers for audit for now
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+
+    try:
+        logs = AuditLog.objects.all().select_related('user').order_by('-timestamp')[:100]
+        data = [{
+            'id': str(log.id),
+            'user': log.user.username if log.user else 'System',
+            'action': log.action,
+            'description': log.description,
+            'timestamp': log.timestamp.isoformat(),
+            'ip_address': log.ip_address
+        } for log in logs]
+        return JsonResponse({'success': True, 'logs': data})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)

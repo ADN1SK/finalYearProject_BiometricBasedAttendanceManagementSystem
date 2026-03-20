@@ -39,8 +39,18 @@ def api_login(request):
             data = json.loads(request.body)
             username = data.get('username')
             password = data.get('password')
+            role = data.get('role') # New: role from selection
+
             user = authenticate(request, username=username, password=password)
             if user is not None:
+                # Validate selected role against actual user roles
+                if role == 'ADMIN' and not user.is_administrator:
+                    return JsonResponse({'success': False, 'error': 'Account does not have Administrator privileges'}, status=403)
+                if role == 'HR_OFFICER' and not user.is_hr_officer:
+                    return JsonResponse({'success': False, 'error': 'Account does not have HR Officer privileges'}, status=403)
+                if role == 'EMPLOYEE' and not user.is_employee:
+                    return JsonResponse({'success': False, 'error': 'Account does not have Employee privileges'}, status=403)
+
                 login(request, user)
 
                 # Determine highest role for UI purposes
@@ -156,6 +166,10 @@ def api_update_user(request, user_id):
 face_cascade = cv2.CascadeClassifier(
     cv2.data.haarcascades +
     "haarcascade_frontalface_default.xml"
+)
+profile_cascade = cv2.CascadeClassifier(
+    cv2.data.haarcascades +
+    "haarcascade_profileface.xml"
 )
 
 # =====================================
@@ -274,12 +288,20 @@ def check_face(request):
 
         faces = face_cascade.detectMultiScale(
             gray,
-            scaleFactor=1.2,
+            scaleFactor=1.1,
             minNeighbors=5,
             minSize=(60, 60),
         )
 
-        if len(faces) == 1:
+        if len(faces) == 0:
+            faces = profile_cascade.detectMultiScale(
+                gray,
+                scaleFactor=1.1,
+                minNeighbors=5,
+                minSize=(60, 60),
+            )
+
+        if len(faces) >= 1:
             return JsonResponse(
                 {"face": True}
             )
@@ -324,24 +346,10 @@ def capture_face(request, user_id):
         )
 
     try:
-
-        data = json.loads(
-            request.body
-        )
-
-        frames = data.get(
-            "frames",
-            []
-        )
-
-        challenge = data.get(
-            "challenge"
-        )
-
-        step = data.get(
-            "step",
-            0
-        )
+        data = json.loads(request.body)
+        frames = data.get("frames", [])
+        challenge = data.get("challenge")
+        step = data.get("step", 0)
 
         if not frames:
             return JsonResponse(
@@ -411,11 +419,11 @@ def capture_face(request, user_id):
                 }
             )
 
-        if len(valid_frames) < 8:
+        if len(valid_frames) < 5:
             return JsonResponse(
                 {
                     "success": False,
-                    "error": "Face not stable",
+                    "error": "Face lost or unstable. Please stay within the frame and turn slowly.",
                 }
             )
 
@@ -428,265 +436,141 @@ def capture_face(request, user_id):
         # LIVENESS
         # ==========
 
-        if challenge == "left" and move > -20:
+        if challenge == "left" and move < 15:
             return JsonResponse(
                 {
                     "success": False,
-                    "error": "Turn more left",
+                    "error": "Incomplete turn. Please turn your head clearly to the left.",
                 }
             )
 
-        if challenge == "right" and move < 20:
+        if challenge == "right" and move > -15:
             return JsonResponse(
                 {
                     "success": False,
-                    "error": "Turn more right",
+                    "error": "Incomplete turn. Please turn your head clearly to the right.",
                 }
             )
-
-        # Blink validation block removed from here
 
         # ==========
         # STORE
         # ==========
 
         if "face_frames" not in request.session:
-            request.session[
-                "face_frames"
-            ] = {}
+            request.session["face_frames"] = {}
 
         face_data = []
 
         for f in valid_frames:
             x, y, w, h = f["box"]
-
-            face = f["image"][
-                y:y + h,
-                x:x + w,
-            ]
-
-            face = cv2.resize(
-                face,
-                (160, 160)
-            )
+            face = f["image"][y:y + h, x:x + w]
+            face = cv2.resize(face, (160, 160))
 
             _, buf = cv2.imencode(
                 ".jpg",
-                cv2.cvtColor(
-                    face,
-                    cv2.COLOR_RGB2BGR,
-                ),
-                [
-                    int(
-                        cv2.IMWRITE_JPEG_QUALITY
-                    ),
-                    80,
-                ],
+                cv2.cvtColor(face, cv2.COLOR_RGB2BGR),
+                [int(cv2.IMWRITE_JPEG_QUALITY), 80],
             )
 
-            face_data.append(
-                base64.b64encode(
-                    buf
-                ).decode()
-            )
+            face_data.append(base64.b64encode(buf).decode())
 
-        request.session[
-            "face_frames"
-        ][str(step)] = face_data
-
+        request.session["face_frames"][str(step)] = face_data
         request.session.modified = True
-
-        # ==========
-        # FINAL
-        # ==========
-
-        if step >= len(
-                CHALLENGES
-        ) - 1:
-
-            all_faces = []
-
-            for i in range(
-                    len(
-                        CHALLENGES
-                    )
-            ):
-                all_faces.extend(
-                    request.session[
-                        "face_frames"
-                    ].get(
-                        str(i),
-                        [],
-                    )
-                )
-
-            embeddings = []
-
-            for f in all_faces[:8]:
-
-                img_bytes = base64.b64decode(
-                    f
-                )
-
-                img_np = cv2.imdecode(
-                    np.frombuffer(
-                        img_bytes,
-                        np.uint8,
-                    ),
-                    cv2.IMREAD_COLOR,
-                )
-
-                img_rgb = cv2.cvtColor(
-                    img_np,
-                    cv2.COLOR_BGR2RGB,
-                )
-
-                try:
-
-                    rep = DeepFace.represent(
-                        img_path=img_rgb,
-                        model_name="Facenet512",
-                        enforce_detection=False,
-                        detector_backend="skip",
-                    )
-
-                    embeddings.append(
-                        rep[0][
-                            "embedding"
-                        ]
-                    )
-
-                except Exception as e:
-
-                    logger.error(e)
-
-            if len(
-                    embeddings
-            ) < 5:
-                return JsonResponse(
-                    {
-                        "success": False,
-                        "error": "Embedding error",
-                    }
-                )
-
-            avg = np.mean(
-                embeddings,
-                axis=0,
-            ).tolist()
-
-            # ==========
-            # DUPLICATE
-            # ==========
-
-            if known_embeddings:
-
-                q = np.array(
-                    avg
-                )
-
-                q = q / (
-                        np.linalg.norm(
-                            q
-                        )
-                        + 1e-7
-                )
-
-                best_i = -1
-                best_s = 0
-
-                for i, emb in enumerate(
-                        known_embeddings
-                ):
-
-                    e = emb / (
-                            np.linalg.norm(
-                                emb
-                            )
-                            + 1e-7
-                    )
-
-                    sim = np.dot(
-                        q,
-                        e,
-                    )
-
-                    if (
-                            sim > 0.8
-                            and sim
-                            > best_s
-                    ):
-                        best_s = sim
-                        best_i = i
-
-                if (
-                        best_i != -1
-                        and known_user_ids[
-                    best_i
-                ]
-                        != str(
-                    user.id
-                )
-                ):
-                    return JsonResponse(
-                        {
-                            "success": False,
-                            "error": f"Already used by {known_usernames[best_i]}",
-                        }
-                    )
-
-            BiometricTemplate.objects.update_or_create(
-                user=user,
-                type=BiometricTemplate.BiometricType.FACE,
-                defaults={
-                    "template_data": avg
-                },
-            )
-
-            EmployeeDetail.objects.update_or_create(
-                user=user,
-                defaults={
-                    "biometric_enrolled": True
-                },
-            )
-
-            request.session.pop(
-                "face_frames",
-                None,
-            )
-
-            load_known_embeddings()
-
-            return JsonResponse(
-                {
-                    "success": True,
-                    "completed": True,
-                    "redirect": reverse(
-                        "admin:accounts_user_change",
-                        args=[
-                            user.pk
-                        ],
-                    ),
-                }
-            )
 
         return JsonResponse(
             {
                 "success": True,
-                "next_step": step + 1,
-                "next_challenge": CHALLENGES[
-                    step + 1
-                    ],
+                "next_step": step + 1 if step < len(CHALLENGES) - 1 else None,
+                "can_verify": step >= len(CHALLENGES) - 1,
+                "next_challenge": CHALLENGES[step + 1] if step < len(CHALLENGES) - 1 else None,
             }
         )
 
     except Exception as e:
-
         logger.exception(e)
+        return JsonResponse({"success": False, "error": str(e)})
 
-        return JsonResponse(
-            {
-                "success": False,
-                "error": str(e),
-            }
+@csrf_exempt
+@staff_member_required
+def verify_face(request, user_id):
+    user = get_object_or_404(User, pk=user_id)
+    
+    if request.method != "POST":
+        return JsonResponse({"success": False, "error": "POST required"})
+
+    try:
+        if "face_frames" not in request.session:
+            return JsonResponse({"success": False, "error": "No capture data found in session"})
+
+        session_frames = request.session.get("face_frames", {})
+        sample_frames = []
+        for i in range(len(CHALLENGES)):
+            step_f = session_frames.get(str(i), [])
+            if step_f:
+                sample_frames.extend(step_f[:3])
+
+        if not sample_frames:
+            return JsonResponse({"success": False, "error": "Incomplete biometric data"})
+
+        embeddings = []
+        for f in sample_frames:
+            img_bytes = base64.b64decode(f)
+            img_np = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
+            img_rgb = cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB)
+
+            try:
+                rep = DeepFace.represent(
+                    img_path=img_rgb,
+                    model_name="Facenet512",
+                    enforce_detection=False,
+                    detector_backend="skip",
+                )
+                embeddings.append(rep[0]["embedding"])
+            except Exception as e:
+                logger.error(f"DeepFace error: {e}")
+
+        if len(embeddings) < 5:
+            return JsonResponse({"success": False, "error": "Insufficient high-quality biometrics. Please recapture."})
+
+        avg = np.mean(embeddings, axis=0).tolist()
+
+        if known_embeddings:
+            q = np.array(avg)
+            q = q / (np.linalg.norm(q) + 1e-7)
+            
+            best_i = -1
+            best_s = 0
+
+            for i, emb in enumerate(known_embeddings):
+                e = emb / (np.linalg.norm(emb) + 1e-7)
+                sim = np.dot(q, e)
+                if sim > 0.8 and sim > best_s:
+                    best_s = sim
+                    best_i = i
+
+            if best_i != -1 and known_user_ids[best_i] != str(user.id):
+                return JsonResponse({"success": False, "error": f"Already used by {known_usernames[best_i]}"})
+
+        BiometricTemplate.objects.update_or_create(
+            user=user,
+            type=BiometricTemplate.BiometricType.FACE,
+            defaults={"template_data": avg},
         )
+
+        EmployeeDetail.objects.update_or_create(
+            user=user,
+            defaults={"biometric_enrolled": True},
+        )
+
+        request.session.pop("face_frames", None)
+        load_known_embeddings()
+
+        return JsonResponse({
+            "success": True,
+            "completed": True,
+            "redirect": reverse("admin:accounts_user_change", args=[user.pk]),
+        })
+
+    except Exception as e:
+        logger.exception(e)
+        return JsonResponse({"success": False, "error": str(e)})

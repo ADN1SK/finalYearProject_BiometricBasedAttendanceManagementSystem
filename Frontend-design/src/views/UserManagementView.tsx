@@ -92,8 +92,8 @@ export const UserManagementView = () => {
     <div className="space-y-8">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight">User Management</h1>
-          <p className="text-slate-500 mt-1 font-medium">Manage all system users, roles, and permissions.</p>
+          <h1 className="text-3xl font-black text-slate-900 tracking-tight italic">User & Role Management</h1>
+          <p className="text-slate-500 mt-1 font-bold italic opacity-70 italic tracking-tight uppercase text-[10px]">Manage staff identities, operational roles, and system permissions.</p>
         </div>
         <button 
           onClick={() => setShowAddModal(true)}
