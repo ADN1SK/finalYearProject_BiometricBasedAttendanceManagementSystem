@@ -15,6 +15,7 @@ from django.urls import reverse
 from django.http import JsonResponse
 from django.contrib.auth import get_user_model, authenticate, login, logout
 from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
+from django.contrib.auth.decorators import login_required
 
 from django.utils import timezone
 from .models import EmployeeDetail, BiometricTemplate, Department, Role, UserRole
@@ -51,6 +52,11 @@ def api_login(request):
                 if role == 'EMPLOYEE' and not user.is_employee:
                     return JsonResponse({'success': False, 'error': 'Account does not have Employee privileges'}, status=403)
 
+                # Ensure is_staff is set for admins
+                if user.is_administrator and not user.is_staff:
+                    user.is_staff = True
+                    user.save()
+
                 login(request, user)
 
                 # Determine highest role for UI purposes
@@ -65,11 +71,37 @@ def api_login(request):
                     'user': {
                         'id': str(user.id),
                         'username': user.username,
-                        'role': role
+                        'role': role,
+                        'must_change_password': user.must_change_password
                     }
                 })
             else:
                 return JsonResponse({'success': False, 'error': 'Invalid credentials'}, status=401)
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)}, status=400)
+    return JsonResponse({'error': 'POST required'}, status=405)
+
+
+@csrf_exempt
+@login_required
+def api_change_password(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            new_password = data.get('new_password')
+            
+            if not new_password or len(new_password) < 8:
+                return JsonResponse({'success': False, 'error': 'Password must be at least 8 characters long.'}, status=400)
+
+            user = request.user
+            user.set_password(new_password)
+            user.must_change_password = False
+            user.save()
+            
+            # Re-authenticate the user with the new password to keep them logged in
+            login(request, user)
+
+            return JsonResponse({'success': True, 'message': 'Password changed successfully.'})
         except Exception as e:
             return JsonResponse({'success': False, 'error': str(e)}, status=400)
     return JsonResponse({'error': 'POST required'}, status=405)
@@ -119,7 +151,7 @@ def api_create_user(request):
     try:
         data = json.loads(request.body)
         username = data.get('username')
-        password = data.get('password')
+        password = data.get('password', 'password123') # Default password
         email = data.get('email', f"{username}@example.com")
         role_name = data.get('role', Role.EMPLOYEE)
         dept_id = data.get('department_id')
@@ -128,6 +160,8 @@ def api_create_user(request):
             return JsonResponse({'success': False, 'error': 'Username already exists'})
             
         user = User.objects.create_user(username=username, password=password, email=email)
+        user.must_change_password = True
+        user.save()
         
         # Assign Role
         role, _ = Role.objects.get_or_create(name=role_name)
@@ -220,8 +254,6 @@ def load_known_embeddings():
         f"Loaded {len(known_embeddings)} templates"
     )
 
-
-load_known_embeddings()
 
 # =====================================
 # CHALLENGES (Blink Removed)

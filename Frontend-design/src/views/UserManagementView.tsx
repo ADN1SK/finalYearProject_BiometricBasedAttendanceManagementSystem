@@ -12,11 +12,6 @@ export const UserManagementView = () => {
   const [selectedDept, setSelectedDept] = useState('All');
   const [showAddModal, setShowAddModal] = useState(false);
 
-  useEffect(() => {
-    // Direct redirection for administrators as they use Django Admin "only"
-    window.location.assign(`http://${window.location.hostname}:8000/admin/accounts/user/`);
-  }, []);
-  
   // Create User Form State
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
@@ -101,13 +96,6 @@ export const UserManagementView = () => {
           <p className="text-slate-500 mt-1 font-bold italic opacity-70 italic tracking-tight uppercase text-[10px]">Manage staff identities, operational roles, and system permissions.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button 
-            onClick={() => window.location.assign(`http://${window.location.hostname}:8000/admin/accounts/user/`)}
-            className="bg-white border border-slate-200 text-slate-600 font-black px-6 py-3 rounded-2xl transition-all hover:bg-slate-50 flex items-center gap-2 uppercase tracking-widest text-[10px]"
-          >
-            <Shield className="w-4 h-4" />
-            Django Admin
-          </button>
           <button 
             onClick={() => setShowAddModal(true)}
             className="bg-primary-600 hover:bg-primary-700 text-white font-black px-6 py-3 rounded-2xl transition-all shadow-lg shadow-primary-200 flex items-center gap-2 uppercase tracking-widest text-xs"

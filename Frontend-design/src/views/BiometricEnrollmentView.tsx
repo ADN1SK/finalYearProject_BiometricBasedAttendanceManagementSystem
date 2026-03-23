@@ -14,7 +14,7 @@ export const BiometricEnrollmentView = () => {
   const [currentChallenge, setCurrentChallenge] = useState<any>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [loading, setLoading] = useState(false);
-  
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -34,13 +34,13 @@ export const BiometricEnrollmentView = () => {
     setIsScanning(true);
     setScanStatus('IDLE');
     setErrorMessage('');
-    
+
     try {
       // Ensure we have a valid CSRF session before starting
       await apiRequest('/accounts/api/csrf/');
-      
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'user', width: 640, height: 480 } 
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: 640, height: 480 }
       });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -68,7 +68,7 @@ export const BiometricEnrollmentView = () => {
     if (step === 2 && isScanning && !isTransitioning) {
       interval = setInterval(async () => {
         if (capturingRef.current || isTransitioning) return;
-        
+
         const canvas = canvasRef.current;
         const video = videoRef.current;
         // Important: Wait for video to be properly initialized with metadata
@@ -80,7 +80,7 @@ export const BiometricEnrollmentView = () => {
             canvas.height = 240;
             ctx.drawImage(video, 0, 0, 320, 240);
             const frame = canvas.toDataURL('image/jpeg', 0.4);
-            
+
             try {
                 const res = await apiRequest('/accounts/face/check/', {
                     method: 'POST',
@@ -92,7 +92,7 @@ export const BiometricEnrollmentView = () => {
                         if (next > 2) {
                             // Trigger the actual burst capture
                             captureFrame();
-                            return 0; 
+                            return 0;
                         }
                         return next;
                     });
@@ -112,15 +112,15 @@ export const BiometricEnrollmentView = () => {
   const captureFrame = async () => {
     if (capturingRef.current || !videoRef.current || !canvasRef.current || !selectedEmployee) return;
     if (videoRef.current.videoWidth === 0) return; // Wait for video feed
-    
+
     capturingRef.current = true;
-    
+
     const canvas = canvasRef.current;
     const video = videoRef.current;
     canvas.width = 320;
     canvas.height = 240;
     const ctx = canvas.getContext('2d');
-    
+
     setScanStatus('PROCESSING');
     setErrorMessage('');
 
@@ -139,10 +139,10 @@ export const BiometricEnrollmentView = () => {
     try {
       const response = await apiRequest(`/accounts/user/${selectedEmployee.id}/capture/`, {
         method: 'POST',
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           frames: capturedFrames,
           challenge: currentChallenge?.type,
-          step: currentChallenge?.type === 'center' ? 0 : 
+          step: currentChallenge?.type === 'center' ? 0 :
                 currentChallenge?.type === 'left' ? 1 : 2
         })
       });
@@ -155,7 +155,7 @@ export const BiometricEnrollmentView = () => {
             const verifyRes = await apiRequest(`/accounts/user/${selectedEmployee.id}/verify/`, {
               method: 'POST'
             });
-            
+
             if (verifyRes.success && verifyRes.completed) {
               setScanStatus('SUCCESS');
               stopCamera();
@@ -256,8 +256,8 @@ export const BiometricEnrollmentView = () => {
                     key={emp.id}
                     onClick={() => setSelectedEmployee(emp)}
                     className={`p-6 rounded-3xl border-2 transition-all flex items-center gap-4 text-left group ${
-                      selectedEmployee?.id === emp.id 
-                        ? 'border-primary-600 bg-primary-50 shadow-lg shadow-primary-100' 
+                      selectedEmployee?.id === emp.id
+                        ? 'border-primary-600 bg-primary-50 shadow-lg shadow-primary-100'
                         : 'border-slate-50 bg-slate-50/50 hover:border-slate-200'
                     }`}
                   >
@@ -277,9 +277,9 @@ export const BiometricEnrollmentView = () => {
 
             <button
               disabled={!selectedEmployee}
-              onClick={() => { 
+              onClick={() => {
                 const backendUrl = `http://${window.location.hostname}:8000/accounts/user/${selectedEmployee.id}/capture/`;
-                window.location.assign(backendUrl); 
+                window.location.assign(backendUrl);
               }}
               className="w-full bg-primary-600 hover:bg-primary-700 disabled:bg-slate-200 text-white font-black py-5 rounded-3xl transition-all shadow-xl shadow-primary-200 flex items-center justify-center gap-3 uppercase tracking-widest text-sm"
             >
@@ -326,7 +326,7 @@ export const BiometricEnrollmentView = () => {
                       playsInline
                       className="w-full h-full object-cover mirror scale-x-[-1]"
                     />
-                    
+
                     {/* Guidance Overlay Pattern */}
                     <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
                        {/* Face Positioning Silhouette */}
@@ -339,7 +339,7 @@ export const BiometricEnrollmentView = () => {
 
                        {/* Interactive Scanning HUD */}
                        {scanStatus === 'PROCESSING' && (
-                         <motion.div 
+                         <motion.div
                            initial={{ top: '10%' }}
                            animate={{ top: '90%' }}
                            transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
@@ -374,10 +374,10 @@ export const BiometricEnrollmentView = () => {
                   {currentChallenge?.instruction || 'Position face within the guidance markers.'}
                 </p>
               </div>
-              
+
               <AnimatePresence>
                 {errorMessage && (
-                  <motion.div 
+                  <motion.div
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
                     exit={{ opacity: 0, height: 0 }}
@@ -412,13 +412,13 @@ export const BiometricEnrollmentView = () => {
                              </div>
                            )}
                            <span className="text-xs font-black uppercase tracking-[0.15em] text-slate-900">
-                             {scanStatus === 'PROCESSING' ? 'Acquiring Vectors...' : 
-                              isTransitioning ? 'Preparing Next Phase...' : 
+                             {scanStatus === 'PROCESSING' ? 'Acquiring Vectors...' :
+                              isTransitioning ? 'Preparing Next Phase...' :
                                stableCount > 0 ? 'Face detected' : 'Show your face'}
                            </span>
                         </div>
                         <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest opacity-60 italic">
-                           {scanStatus === 'PROCESSING' ? 'Executing 8-frame biometric burst' : 
+                           {scanStatus === 'PROCESSING' ? 'Executing 8-frame biometric burst' :
                             isTransitioning ? 'Prepare for secondary challenge mode' :
                             'Maintain absolute stability within markers'}
                         </p>

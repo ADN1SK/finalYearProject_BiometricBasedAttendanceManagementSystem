@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Fingerprint, Shield, ChevronRight, User as UserIcon, Settings, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { User, UserRole } from '../types';
-import { MOCK_USERS } from '../mockData';
 import { AttendanceTerminal } from '../components/AttendanceTerminal';
 import { apiRequest, ensureCsrf } from '../api/client';
 
@@ -48,6 +47,7 @@ export const LoginView = ({ onLogin }: LoginViewProps) => {
           role: response.user.role === 'Administrator' ? 'ADMIN' : 
                 response.user.role === 'HR Officer' ? 'HR_OFFICER' : 'EMPLOYEE',
           department: 'IT Administration', // Fallback department
+          must_change_password: response.user.must_change_password,
         };
         onLogin(loggedInUser);
       } else {

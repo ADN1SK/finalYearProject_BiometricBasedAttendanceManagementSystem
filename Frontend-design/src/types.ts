@@ -14,6 +14,7 @@ export interface User {
   avatar?: string;
   status?: 'ACTIVE' | 'SUSPENDED';
   enrolled?: boolean;
+  must_change_password?: boolean;
 }
 
 export interface AttendanceRecord {

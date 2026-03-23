@@ -9,11 +9,6 @@ export const PolicyConfigurationView = ({ user }: { user: User }) => {
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
 
-  React.useEffect(() => {
-    // Direct redirection for administrators as they use Django Admin "only"
-    window.location.assign(`http://${window.location.hostname}:8000/admin/leave/policy/`);
-  }, []);
-
   const fetchPolicies = async () => {
     try {
       const res = await apiRequest('/api/leave/api/policies/');
@@ -62,13 +57,6 @@ export const PolicyConfigurationView = ({ user }: { user: User }) => {
           <p className="text-slate-500 mt-1 font-medium italic">Configure attendance, leave, and system-wide policies.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button 
-            onClick={() => window.location.assign(`http://${window.location.hostname}:8000/admin/leave/policy/`)}
-            className="bg-white border border-slate-200 text-slate-600 font-black px-6 py-3 rounded-2xl transition-all hover:bg-slate-50 flex items-center gap-2 uppercase tracking-widest text-[10px]"
-          >
-            <Shield className="w-4 h-4" />
-            Django Admin
-          </button>
           <button 
             onClick={fetchPolicies}
             className="bg-white border border-slate-100 px-6 py-3 rounded-2xl shadow-sm text-slate-600 font-black flex items-center gap-2 uppercase tracking-widest text-[10px] hover:bg-slate-50 transition-all"

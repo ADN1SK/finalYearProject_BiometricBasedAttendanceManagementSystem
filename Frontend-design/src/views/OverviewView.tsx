@@ -45,10 +45,10 @@ export const OverviewView = ({ user }: OverviewViewProps) => {
   const renderAdminView = () => (
     <div className="space-y-8">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard title="Total Staff" value={String(stats?.totalEmployees || 0)} icon={Users} colorClass="bg-blue-100 text-blue-600" delay={0.1} />
-        <StatCard title="Present Today" value={String(stats?.presentToday || 0)} icon={CheckCircle2} colorClass="bg-emerald-100 text-emerald-600" delay={0.2} />
-        <StatCard title="Absent" value={String(stats?.absentToday || 0)} icon={XCircle} colorClass="bg-red-100 text-red-600" delay={0.3} />
-        <StatCard title="Pending Leaves" value={String(stats?.pendingLeaves || 0)} icon={Clock} colorClass="bg-amber-100 text-amber-600" delay={0.4} />
+        <StatCard title="Total Staff" value={String(stats?.totalStaff || 0)} icon={Users} colorClass="bg-blue-100 text-blue-600" delay={0.1} />
+        <StatCard title="Active Staff" value={String(stats?.activeStaff || 0)} icon={CheckCircle2} colorClass="bg-emerald-100 text-emerald-600" delay={0.2} />
+        <StatCard title="Inactive Staff" value={String(stats?.inactiveStaff || 0)} icon={XCircle} colorClass="bg-red-100 text-red-600" delay={0.3} />
+        <StatCard title="Biometric Enrolled" value={String(stats?.enrolledStaff || 0)} icon={Fingerprint} colorClass="bg-purple-100 text-purple-600" delay={0.4} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -56,14 +56,14 @@ export const OverviewView = ({ user }: OverviewViewProps) => {
           <h3 className="text-xl font-black text-slate-900 uppercase italic tracking-tight border-b border-slate-100 pb-4">Core Pillars</h3>
           <div className="grid grid-cols-2 gap-4">
               {[
-                { name: 'System Oversight', label: 'Monitor Performance', icon: Activity, color: 'text-primary-600', bg: 'bg-primary-50', path: '/admin/' },
-                { name: 'User & Role Mgmt', label: 'Assign Permissions', icon: Shield, color: 'text-blue-600', bg: 'bg-blue-50', path: '/admin/accounts/user/' },
-                { name: 'Policy Config', label: 'Attendance Rules', icon: Settings, color: 'text-emerald-600', bg: 'bg-emerald-50', path: '/admin/leave/policy/' },
-                { name: 'Workflow Mgmt', label: 'Execute Processes', icon: FileText, color: 'text-amber-600', bg: 'bg-amber-50', path: '/admin/accounts/workflow/' },
+                { name: 'System Oversight', label: 'Monitor Performance', icon: Activity, color: 'text-primary-600', bg: 'bg-primary-50', path: '/auditlogs' },
+                { name: 'User & Role Mgmt', label: 'Assign Permissions', icon: Shield, color: 'text-blue-600', bg: 'bg-blue-50', path: '/usermanagement' },
+                { name: 'Policy Config', label: 'Attendance Rules', icon: Settings, color: 'text-emerald-600', bg: 'bg-emerald-50', path: '/policies' },
+                { name: 'Workflow Mgmt', label: 'Execute Processes', icon: FileText, color: 'text-amber-600', bg: 'bg-amber-50', path: '/systemsetup' },
               ].map((node, idx) => (
                 <button 
                   key={idx} 
-                  onClick={() => window.location.assign(`http://${window.location.hostname}:8000${node.path}`)}
+                  onClick={() => window.location.assign(node.path)}
                   className="p-4 bg-white rounded-2xl border border-slate-50 flex flex-col gap-3 group hover:border-primary-100 transition-all text-left w-full"
                 >
                   <div className={`w-10 h-10 rounded-xl ${node.bg} ${node.color} flex items-center justify-center group-hover:scale-110 transition-transform`}>
@@ -104,7 +104,7 @@ export const OverviewView = ({ user }: OverviewViewProps) => {
                </div>
             </div>
             <button 
-              onClick={() => window.location.assign(`http://${window.location.hostname}:8000/admin/`)}
+              onClick={() => window.location.assign('/auditlogs')}
               className="w-full mt-6 py-4 bg-primary-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-primary-200 transition-all hover:bg-primary-700"
             >
               Run Full Diagnostic

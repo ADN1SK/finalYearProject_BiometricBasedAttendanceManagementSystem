@@ -8,6 +8,7 @@ urlpatterns = [
     path('api/csrf/', views.get_csrf, name='get_csrf'),
     path('api/login/', views.api_login, name='api_login'),
     path('api/logout/', views.api_logout, name='api_logout'),
+    path('api/change-password/', views.api_change_password, name='api_change_password'),
     path('api/users/', views.api_list_users, name='api_user_list'),
     path('api/users/create/', views.api_create_user, name='api_user_create'),
     path('api/users/<uuid:user_id>/update/', views.api_update_user, name='api_user_update'),

@@ -14,10 +14,11 @@ from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
 from django.contrib.auth.decorators import login_required
 from django.contrib.admin.views.decorators import staff_member_required
+from django.contrib.auth import get_user_model
 
 from mtcnn import MTCNN
 # Internal model imports
-from accounts.models import BiometricTemplate, User
+from accounts.models import BiometricTemplate, User, EmployeeDetail
 from scheduling.models import Assignment
 from .models import AttendanceRecord
 
@@ -343,36 +344,24 @@ def get_my_attendance_history(request):
 def api_admin_stats(request):
     """Returns global statistics for the Admin dashboard."""
     try:
-        now = timezone.now()
-        today = now.date()
-        
-        total_employees = User.objects.filter(is_active=True).count()
-        present_today = AttendanceRecord.objects.filter(
-            timestamp__date=today, 
-            type=AttendanceRecord.RecordType.CHECK_IN
-        ).values('user').distinct().count()
-        
-        late_today = AttendanceRecord.objects.filter(
-            timestamp__date=today,
-            status=AttendanceRecord.RecordStatus.LATE
-        ).values('user').distinct().count()
-        
-        # Simple absenteeism: Total - Present
-        # (In a real system, you'd check against schedules)
-        absent_today = total_employees - present_today
+        User = get_user_model()
+        total_staff = User.objects.all().count()
+        active_staff = User.objects.filter(is_active=True).count()
+        inactive_staff = total_staff - active_staff
+        enrolled_staff = EmployeeDetail.objects.filter(biometric_enrolled=True).count()
         
         return JsonResponse({
             'success': True,
             'stats': {
-                'totalEmployees': total_employees,
-                'presentToday': present_today,
-                'absentToday': absent_today,
-                'lateToday': late_today,
-                'pendingLeaves': 5 # Placeholder until Leave integration
+                'totalStaff': total_staff,
+                'activeStaff': active_staff,
+                'inactiveStaff': inactive_staff,
+                'enrolledStaff': enrolled_staff
             }
         })
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
 @staff_member_required
 def api_list_all_attendance(request):
     """Lists attendance records for all users (Admin view)."""

@@ -41,8 +41,15 @@ class User(AbstractUser):
 
     status = models.CharField(max_length=50, choices=Status.choices, default=Status.ACTIVE)
     roles = models.ManyToManyField(Role, through='UserRole', related_name='users')
+    must_change_password = models.BooleanField(default=False)
     
     objects = UserManager()
+
+    def save(self, *args, **kwargs):
+        # Ensure that is_staff is set correctly based on role
+        if self.is_administrator:
+            self.is_staff = True
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.username

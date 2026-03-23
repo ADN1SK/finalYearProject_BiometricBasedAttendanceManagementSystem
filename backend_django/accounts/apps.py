@@ -5,5 +5,4 @@ class AccountsConfig(AppConfig):
     name = 'accounts'
 
     def ready(self):
-        from .views import load_known_embeddings
-        load_known_embeddings()
+        pass
