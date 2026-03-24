@@ -1,236 +1,267 @@
 import React from 'react';
-import { Calendar, Plus, Search, Filter, Download, User as UserIcon, CheckCircle2, AlertCircle, XCircle } from 'lucide-react';
-import { motion } from 'motion/react';
-import { User } from '../types';
+import { Calendar, Download, CheckCircle2, XCircle, Clock, Users, UserCheck, AlertTriangle, BarChart3, RefreshCw, Settings, Save, Pencil } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import { apiRequest } from '../api/client';
 
-export const LeaveManagementView = ({ user }: { user: User }) => {
-  const [leaves, setLeaves] = React.useState<any[]>([]);
-  const [summary, setSummary] = React.useState<any>(null);
-  const [loading, setLoading] = React.useState(true);
-  const [showRequestModal, setShowRequestModal] = React.useState(false);
-  const [formData, setFormData] = React.useState({
-    leave_type: 'ANNUAL',
-    start_date: '',
-    end_date: '',
-    reason: ''
-  });
+const QUOTA_TYPES = [
+  { key: 'annual', label: 'Annual Leave', keyword: 'annual', color: 'text-primary-600', bg: 'bg-primary-50', border: 'border-primary-100' },
+  { key: 'sick', label: 'Medical / Sick Leave', keyword: 'medical', color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100' },
+  { key: 'compassionate', label: 'Compassionate Leave', keyword: 'bereavement', color: 'text-rose-600', bg: 'bg-rose-50', border: 'border-rose-100' },
+  { key: 'emergency', label: 'Emergency Absence', keyword: 'emergency', color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-100' },
+];
 
-  const fetchLeaves = async () => {
+export const LeaveManagementView = () => {
+  const [leaves, setLeaves] = React.useState<any[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [policies, setPolicies] = React.useState<any[]>([]);
+  const [quotas, setQuotas] = React.useState<Record<string, number>>({});
+  const [editingQuota, setEditingQuota] = React.useState<string | null>(null);
+  const [savingQuota, setSavingQuota] = React.useState<string | null>(null);
+
+  const fetchData = async () => {
+    setLoading(true);
     try {
-      const res = await apiRequest('/api/leave/api/my/');
-      if (res.success) {
-        setLeaves(res.leave_requests);
-        setSummary(res.summary);
+      const [leaveRes, policyRes] = await Promise.all([
+        apiRequest('/api/leave/api/all/'),
+        apiRequest('/api/leave/api/policies/')
+      ]);
+      if (leaveRes.success) setLeaves(leaveRes.leave_requests);
+      if (policyRes.success) {
+        setPolicies(policyRes.policies);
+        const parsedQuotas: Record<string, number> = {};
+        QUOTA_TYPES.forEach(qt => {
+          const policy = policyRes.policies.find((p: any) =>
+            p.name.toLowerCase().includes(qt.keyword)
+          );
+          if (policy) {
+            const match = policy.value.match(/\d+/);
+            parsedQuotas[qt.key] = match ? parseInt(match[0]) : 0;
+            parsedQuotas[`${qt.key}_id`] = policy.id;
+          }
+        });
+        setQuotas(parsedQuotas);
       }
     } catch (err) {
-      console.error("Failed to fetch leaves", err);
+      console.error('Failed to fetch leave data', err);
     } finally {
       setLoading(false);
     }
   };
 
-  React.useEffect(() => {
-    fetchLeaves();
-  }, []);
+  const handleExportReport = () => {
+    if (leaves.length === 0) return;
+    const headers = ['Employee', 'Leave Type', 'Start Date', 'End Date', 'Days', 'Status'];
+    const rows = leaves.map(l => {
+      const start = new Date(l.start_date);
+      const end = new Date(l.end_date);
+      const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+      return [l.employee_name, l.leave_type, l.start_date, l.end_date, days, l.status];
+    });
+    const csvContent = "data:text/csv;charset=utf-8,"
+      + headers.join(",") + "\n"
+      + rows.map(r => r.join(",")).join("\n");
+    const link = document.createElement("a");
+    link.setAttribute("href", encodeURI(csvContent));
+    link.setAttribute("download", `leave_report_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  React.useEffect(() => { fetchData(); }, []);
+
+  const handleSaveQuota = async (key: string, label: string) => {
+    const policyId = quotas[`${key}_id`];
+    if (!policyId) return;
+    setSavingQuota(key);
     try {
-      const res = await apiRequest('/api/leave/api/request/', {
-        method: 'POST',
-        body: JSON.stringify(formData)
+      const res = await apiRequest(`/api/leave/api/policies/${policyId}/`, {
+        method: 'PUT',
+        body: JSON.stringify({ value: `${quotas[key]} Days` })
       });
-      if (res.success) {
-        setShowRequestModal(false);
-        fetchLeaves();
-        alert("Leave request submitted successfully!");
-      }
-    } catch (err: any) {
-      alert(err.message || "Failed to submit request");
+      if (res.success) setEditingQuota(null);
+    } catch (err) {
+      console.error('Failed to save quota', err);
+    } finally {
+      setSavingQuota(null);
     }
   };
+
+  const pending = leaves.filter(l => l.status === 'Pending').length;
+  const approved = leaves.filter(l => l.status === 'Approved').length;
+  const rejected = leaves.filter(l => l.status === 'Rejected').length;
+
+  const typeBreakdown = leaves.reduce((acc: any, l) => {
+    acc[l.leave_type] = (acc[l.leave_type] || 0) + 1;
+    return acc;
+  }, {});
+
+  const summaryCards = [
+    { label: 'Total Submissions', value: leaves.length, color: 'text-slate-900', bg: 'bg-slate-50', border: 'border-slate-100', icon: <Users className="w-5 h-5 text-slate-400" /> },
+    { label: 'Awaiting HR Review', value: pending, color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-100', icon: <Clock className="w-5 h-5 text-amber-400" /> },
+    { label: 'Approved Grants', value: approved, color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-100', icon: <UserCheck className="w-5 h-5 text-emerald-400" /> },
+    { label: 'Denied Applications', value: rejected, color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-100', icon: <AlertTriangle className="w-5 h-5 text-red-400" /> },
+  ];
+
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight">Leave Management</h1>
-          <p className="text-slate-500 mt-1 font-medium">Request and track employee leave applications.</p>
+          <h1 className="text-3xl font-black text-slate-900 tracking-tight italic uppercase">Leave Administration</h1>
+          <p className="text-slate-500 mt-1 font-bold italic opacity-70 tracking-tight uppercase text-[10px]">Institutional leave oversight, quota governance, and statistical analysis.</p>
         </div>
-        <button 
-          onClick={() => setShowRequestModal(true)}
-          className="bg-primary-600 hover:bg-primary-700 text-white font-black px-6 py-3 rounded-2xl transition-all shadow-lg shadow-primary-200 flex items-center gap-2 uppercase tracking-widest text-xs"
-        >
-          <Plus className="w-4 h-4" />
-          Request Leave
-        </button>
-      </div>
-
-      {showRequestModal && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-white rounded-[2.5rem] p-8 w-full max-w-md shadow-2xl relative"
+        <div className="flex items-center gap-3">
+          <button onClick={fetchData} className="p-3 bg-white border border-slate-200 text-slate-600 rounded-2xl hover:bg-slate-50 transition-all shadow-sm" title="Refresh data">
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-primary-600' : ''}`} />
+          </button>
+          <button
+            onClick={handleExportReport}
+            disabled={leaves.length === 0}
+            className="bg-white border border-slate-200 text-slate-600 font-black px-6 py-3 rounded-2xl transition-all hover:bg-slate-50 flex items-center gap-2 uppercase tracking-widest text-xs shadow-sm disabled:opacity-30 disabled:cursor-not-allowed"
           >
-            <h2 className="text-2xl font-black text-slate-900 mb-6">Request Leave</h2>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Leave Type</label>
-                <select 
-                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-4 text-sm focus:ring-2 focus:ring-primary-500 transition-all outline-none"
-                  value={formData.leave_type}
-                  onChange={e => setFormData({...formData, leave_type: e.target.value})}
-                >
-                  <option value="ANNUAL">Annual Leave</option>
-                  <option value="SICK">Sick Leave</option>
-                  <option value="MATERNITY">Maternity</option>
-                  <option value="UNPAID">Unpaid Leave</option>
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Start Date</label>
-                  <input 
-                    type="date"
-                    required
-                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-4 text-sm focus:ring-2 focus:ring-primary-500 transition-all outline-none"
-                    value={formData.start_date}
-                    onChange={e => setFormData({...formData, start_date: e.target.value})}
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">End Date</label>
-                  <input 
-                    type="date"
-                    required
-                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-4 text-sm focus:ring-2 focus:ring-primary-500 transition-all outline-none"
-                    value={formData.end_date}
-                    onChange={e => setFormData({...formData, end_date: e.target.value})}
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Reason</label>
-                <textarea 
-                  required
-                  rows={3}
-                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-4 text-sm focus:ring-2 focus:ring-primary-500 transition-all outline-none"
-                  value={formData.reason}
-                  onChange={e => setFormData({...formData, reason: e.target.value})}
-                />
-              </div>
-              <div className="flex gap-4 pt-4">
-                <button 
-                  type="button"
-                  onClick={() => setShowRequestModal(false)}
-                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-black py-4 rounded-2xl transition-all"
-                >
-                  Cancel
-                </button>
-                <button 
-                  type="submit"
-                  className="flex-1 bg-primary-600 hover:bg-primary-700 text-white font-black py-4 rounded-2xl transition-all"
-                >
-                  Submit
-                </button>
-              </div>
-            </form>
-          </motion.div>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="glass-card rounded-3xl p-6 border border-slate-100 space-y-2 bg-white/40">
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Annual Leave</p>
-          <div className="flex items-end justify-between">
-            <h3 className="text-3xl font-black text-slate-900">{String(summary?.annual_left ?? '--').padStart(2, '0')}</h3>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Days Left</span>
-          </div>
-        </div>
-        <div className="glass-card rounded-3xl p-6 border border-slate-100 space-y-2 bg-white/40">
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sick Leave</p>
-          <div className="flex items-end justify-between">
-            <h3 className="text-3xl font-black text-slate-900">{String(summary?.sick_left ?? '--').padStart(2, '0')}</h3>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Days Left</span>
-          </div>
-        </div>
-        <div className="glass-card rounded-3xl p-6 border border-slate-100 space-y-2 bg-white/40">
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pending Requests</p>
-          <div className="flex items-end justify-between">
-            <h3 className="text-3xl font-black text-amber-600">{String(summary?.pending_count ?? '--').padStart(2, '0')}</h3>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Active</span>
-          </div>
-        </div>
-        <div className="glass-card rounded-3xl p-6 border border-slate-100 space-y-2 bg-white/40">
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Approved Leaves</p>
-          <div className="flex items-end justify-between">
-            <h3 className="text-3xl font-black text-emerald-600">{String(summary?.approved_count ?? '--').padStart(2, '0')}</h3>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total</span>
-          </div>
+            <Download className="w-4 h-4" />
+            Export Report
+          </button>
         </div>
       </div>
 
-      <div className="glass-card rounded-[2.5rem] overflow-hidden border border-slate-100 shadow-sm">
-        <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/30">
-          <h3 className="font-black text-slate-900">Your Leave History</h3>
-          <div className="flex items-center gap-2">
-            <button className="p-2 hover:bg-slate-100 rounded-xl transition-all text-slate-400">
-              <Filter className="w-5 h-5" />
-            </button>
-            <button className="p-2 hover:bg-slate-100 rounded-xl transition-all text-slate-400">
-              <Download className="w-5 h-5" />
-            </button>
+      {/* Institutional Overview */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {summaryCards.map((card) => (
+          <div key={card.label} className={`glass-card rounded-[2rem] p-6 border ${card.border} bg-white/60 flex items-center gap-4`}>
+            <div className={`w-12 h-12 ${card.bg} rounded-2xl flex items-center justify-center border ${card.border} flex-shrink-0`}>
+              {card.icon}
+            </div>
+            <div>
+              <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.15em] italic">{card.label}</p>
+              <h3 className={`text-3xl font-black tracking-tighter ${card.color}`}>{String(card.value).padStart(2, '0')}</h3>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        {/* Leave Quota Configuration */}
+        <div className="lg:col-span-2 glass-card rounded-[2rem] border border-slate-100 bg-white/60 overflow-hidden">
+          <div className="flex items-center gap-3 p-6 border-b border-slate-100 bg-white/60">
+            <div className="w-9 h-9 bg-primary-50 rounded-xl flex items-center justify-center border border-primary-100">
+              <Settings className="w-4 h-4 text-primary-600" />
+            </div>
+            <div>
+              <h3 className="text-[11px] font-black text-slate-900 uppercase tracking-tight italic">Leave Quota Configuration</h3>
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest opacity-60 italic">Per-employee annual allocations</p>
+            </div>
+          </div>
+          <div className="p-6 space-y-4">
+            {QUOTA_TYPES.map(qt => (
+              <div key={qt.key} className={`flex items-center justify-between p-4 rounded-2xl border ${qt.border} ${qt.bg} gap-4`}>
+                <div className="flex-1">
+                  <p className={`text-[9px] font-black uppercase tracking-[0.15em] italic ${qt.color} opacity-70`}>{qt.label}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    {editingQuota === qt.key ? (
+                      <input
+                        type="number"
+                        min={1}
+                        max={365}
+                        value={quotas[qt.key] ?? ''}
+                        onChange={e => setQuotas(q => ({ ...q, [qt.key]: parseInt(e.target.value) || 0 }))}
+                        className="w-20 text-lg font-black bg-white border border-slate-200 rounded-xl px-3 py-1 outline-none focus:ring-2 focus:ring-primary-400"
+                        autoFocus
+                      />
+                    ) : (
+                      <span className={`text-2xl font-black tracking-tighter ${qt.color}`}>
+                        {quotas[qt.key] ?? '—'}
+                      </span>
+                    )}
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Days / Year</span>
+                  </div>
+                </div>
+
+                {editingQuota === qt.key ? (
+                  <button
+                    onClick={() => handleSaveQuota(qt.key, qt.label)}
+                    disabled={savingQuota === qt.key}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-all text-[9px] font-black uppercase tracking-widest italic shadow-sm disabled:opacity-50"
+                  >
+                    {savingQuota === qt.key ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                    Save
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setEditingQuota(qt.key)}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 text-slate-500 hover:text-primary-600 hover:border-primary-200 rounded-xl transition-all text-[9px] font-black uppercase tracking-widest italic shadow-sm"
+                  >
+                    <Pencil className="w-3 h-3" />
+                    Edit
+                  </button>
+                )}
+              </div>
+            ))}
           </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="bg-slate-50/50">
-                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Leave Type</th>
-                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Duration</th>
-                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Reason</th>
-                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {loading ? (
-                <tr><td colSpan={4} className="px-8 py-10 text-center text-slate-400 font-bold">Loading...</td></tr>
-              ) : leaves.length === 0 ? (
-                <tr><td colSpan={4} className="px-8 py-10 text-center text-slate-400 font-bold">No leave requests found.</td></tr>
-              ) : leaves.map((leave) => (
-                <tr key={leave.id} className="hover:bg-slate-50/30 transition-colors group">
-                  <td className="px-8 py-5">
-                    <div className="flex items-center gap-3">
-                      <div className={`p-2 rounded-xl ${
-                        leave.status === 'Approved' ? 'bg-emerald-100 text-emerald-600' : 
-                        leave.status === 'Pending' ? 'bg-amber-100 text-amber-600' : 'bg-red-100 text-red-600'
-                      }`}>
-                        <Calendar className="w-4 h-4" />
-                      </div>
-                      <span className="text-sm font-bold text-slate-900">{leave.leave_type}</span>
-                    </div>
-                  </td>
-                  <td className="px-8 py-5">
-                    <div className="flex flex-col">
-                      <span className="text-xs font-bold text-slate-600">{leave.start_date} - {leave.end_date}</span>
-                    </div>
-                  </td>
-                  <td className="px-8 py-5">
-                    <span className="text-xs font-medium text-slate-500 truncate max-w-[200px] block">View Details</span>
-                  </td>
-                  <td className="px-8 py-5 text-right">
-                    <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
-                      leave.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' : 
-                      leave.status === 'Pending' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
-                    }`}>
-                      {leave.status}
-                    </span>
-                  </td>
-                </tr>
+
+        {/* Leave Type Breakdown + Recent Log */}
+        <div className="lg:col-span-3 space-y-6">
+          {/* Type Breakdown */}
+          <div className="glass-card rounded-[2rem] border border-slate-100 bg-white/60 overflow-hidden">
+            <div className="flex items-center gap-3 p-6 border-b border-slate-100 bg-white/60">
+              <div className="w-9 h-9 bg-slate-50 rounded-xl flex items-center justify-center border border-slate-100">
+                <BarChart3 className="w-4 h-4 text-slate-500" />
+              </div>
+              <h3 className="text-[11px] font-black text-slate-900 uppercase tracking-tight italic">Institutional Leave Breakdown</h3>
+            </div>
+            <div className="p-6 grid grid-cols-2 gap-3">
+              {Object.entries(typeBreakdown).length === 0 ? (
+                <p className="col-span-2 text-center text-[10px] font-black text-slate-300 uppercase tracking-widest italic py-4">No applications on record</p>
+              ) : Object.entries(typeBreakdown).map(([type, count]: any) => (
+                <div key={type} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                  <span className="text-[10px] font-black text-slate-600 uppercase tracking-tight italic">{type}</span>
+                  <span className="text-sm font-black text-slate-900">{count}</span>
+                </div>
               ))}
-            </tbody>
-          </table>
+            </div>
+          </div>
+
+          {/* Recent Applications Log (read-only for admin) */}
+          <div className="glass-card rounded-[2rem] border border-slate-100 bg-white/60 overflow-hidden">
+            <div className="flex items-center gap-3 p-6 border-b border-slate-100 bg-white/60">
+              <div className="w-9 h-9 bg-slate-50 rounded-xl flex items-center justify-center border border-slate-100">
+                <Calendar className="w-4 h-4 text-slate-500" />
+              </div>
+              <h3 className="text-[11px] font-black text-slate-900 uppercase tracking-tight italic">Recent Applications Log</h3>
+            </div>
+            <div className="overflow-y-auto max-h-64">
+              {loading ? (
+                <div className="flex items-center justify-center py-10">
+                  <RefreshCw className="w-6 h-6 animate-spin text-primary-600 opacity-30" />
+                </div>
+              ) : leaves.length === 0 ? (
+                <p className="text-center text-[10px] font-black text-slate-300 uppercase tracking-widest italic py-10">No applications on record</p>
+              ) : leaves.slice(0, 10).map(l => (
+                <div key={l.id} className="flex items-center justify-between px-6 py-3 border-b border-slate-50 hover:bg-slate-50/30 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-primary-50 border border-primary-100 rounded-lg flex items-center justify-center font-black text-primary-500 text-xs">
+                      {(l.employee_name || '?').charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-slate-800 italic uppercase tracking-tight">{l.employee_name}</p>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase opacity-60">{l.leave_type} · {l.start_date}</p>
+                    </div>
+                  </div>
+                  <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border ${
+                    l.status === 'Approved' ? 'bg-emerald-50 border-emerald-100 text-emerald-700' :
+                    l.status === 'Pending' ? 'bg-amber-50 border-amber-100 text-amber-700' :
+                    'bg-red-50 border-red-100 text-red-700'
+                  }`}>
+                    {l.status === 'Approved' ? <CheckCircle2 className="w-2.5 h-2.5" /> :
+                     l.status === 'Pending' ? <Clock className="w-2.5 h-2.5" /> :
+                     <XCircle className="w-2.5 h-2.5" />}
+                    <span className="text-[8px] font-black uppercase tracking-widest italic">{l.status}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </div>

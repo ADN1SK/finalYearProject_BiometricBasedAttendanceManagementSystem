@@ -44,8 +44,8 @@ export const OverviewView = ({ user }: OverviewViewProps) => {
     <div className="space-y-8">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard title="Total Employees" value={String(stats?.totalEmployees || 0)} icon={Users} colorClass="bg-blue-100 text-blue-600" delay={0.1} />
-        <StatCard title="Currently Working Staff" value={String(stats?.activeEmployees || 0)} icon={CheckCircle2} colorClass="bg-emerald-100 text-emerald-600" delay={0.2} />
-        <StatCard title="Dormant" value={String(stats?.dormantEmployees || 0)} icon={XCircle} colorClass="bg-red-100 text-red-600" delay={0.3} />
+        <StatCard title="Active Staff" value={String(stats?.activeEmployees || 0)} icon={CheckCircle2} colorClass="bg-emerald-100 text-emerald-600" delay={0.2} />
+        <StatCard title="Suspended" value={String(stats?.suspendedEmployees || 0)} icon={XCircle} colorClass="bg-red-100 text-red-600" delay={0.3} />
         <StatCard title="Face Enrolled" value={String(stats?.faceEnrolled || 0)} icon={Fingerprint} colorClass="bg-purple-100 text-purple-600" delay={0.4} />
       </div>
 

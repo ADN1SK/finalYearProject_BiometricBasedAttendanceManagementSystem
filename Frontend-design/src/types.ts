@@ -24,6 +24,7 @@ export interface AttendanceRecord {
   time: string;
   type: string;
   status: string;
+  verification: string;
   timestamp: string;
 }
 

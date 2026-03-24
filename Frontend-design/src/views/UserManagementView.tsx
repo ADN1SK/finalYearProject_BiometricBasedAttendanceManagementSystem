@@ -165,6 +165,101 @@ export const UserManagementView = () => {
     return matchesSearch && matchesDept;
   });
 
+  const renderTable = (usersToRender: User[]) => (
+    <div className="glass-card rounded-[2rem] overflow-hidden border border-slate-100 shadow-sm relative">
+      <div className="overflow-x-auto">
+        <table className="w-full text-left">
+          <thead>
+            <tr className="bg-slate-50/50">
+              <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">User Info</th>
+              <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Role</th>
+              <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Department</th>
+              <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</th>
+              <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-50">
+            {usersToRender.map((user) => (
+              <tr key={user.id} className="hover:bg-slate-50/30 transition-colors group">
+                <td className="px-8 py-5">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-primary-50 text-primary-600 rounded-2xl flex items-center justify-center font-black text-lg">
+                      {user.name.charAt(0)}
+                    </div>
+                    <div>
+                      <p className="text-sm font-black text-slate-900">{user.name}</p>
+                      <div className="flex items-center gap-2 text-[10px] text-slate-400 font-bold mt-0.5">
+                        <Mail className="w-3 h-3" /> {user.email}
+                      </div>
+                    </div>
+                  </div>
+                </td>
+                <td className="px-8 py-5">
+                  <div className="flex items-center gap-2">
+                    <Shield className={`w-4 h-4 ${String(user.role).toUpperCase().includes('ADMIN') ? 'text-primary-600' : 'text-slate-400'}`} />
+                    <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">{String(user.role).replace('_', ' ')}</span>
+                  </div>
+                </td>
+                <td className="px-8 py-5">
+                  <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
+                    <MapPin className="w-4 h-4 text-slate-300" />
+                    {user.department}
+                  </div>
+                </td>
+                <td className="px-8 py-5">
+                  <button 
+                    onClick={() => toggleUserStatus(user.id, user.status || 'ACTIVE')}
+                    className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest transition-colors ${
+                      user.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-red-100 text-red-700 hover:bg-red-200'
+                    }`}
+                  >
+                    {user.status || 'ACTIVE'}
+                  </button>
+                </td>
+                <td className="px-8 py-5 text-right relative">
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); setActiveDropdown(activeDropdown === user.id ? null : user.id); }}
+                    className="p-2 hover:bg-slate-100 rounded-xl transition-all text-slate-400 hover:text-slate-900"
+                  >
+                    <MoreVertical className="w-5 h-5" />
+                  </button>
+                  
+                  {/* Action Dropdown */}
+                  <AnimatePresence>
+                    {activeDropdown === user.id && (
+                      <motion.div 
+                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.95 }}
+                        className="absolute right-12 top-10 w-48 bg-white rounded-2xl shadow-xl shadow-slate-200/50 border border-slate-100 overflow-hidden z-20 py-2"
+                        ref={dropdownRef}
+                      >
+                        <button 
+                          onClick={() => openEditModal(user)}
+                          className="w-full text-left px-4 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 transition-colors"
+                        >
+                          <Edit2 className="w-4 h-4 text-primary-500" />
+                          Edit User
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteUser(user)}
+                          className="w-full text-left px-4 py-3 text-sm font-bold text-red-600 hover:bg-red-50 flex items-center gap-3 transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          Delete User
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
@@ -204,102 +299,62 @@ export const UserManagementView = () => {
         </select>
       </div>
 
-      <div className="glass-card rounded-[2.5rem] overflow-hidden border border-slate-100 shadow-sm relative min-h-[400px]">
+      <div className="space-y-12">
         {loading ? (
-          <div className="absolute inset-0 flex items-center justify-center bg-white/50 backdrop-blur-sm z-10">
+          <div className="glass-card rounded-[2.5rem] min-h-[400px] flex items-center justify-center border border-slate-100 shadow-sm relative">
             <RefreshCw className="w-8 h-8 animate-spin text-primary-600" />
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="bg-slate-50/50">
-                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">User Info</th>
-                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Role</th>
-                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Department</th>
-                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</th>
-                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {filteredUsers.map((user) => (
-                  <tr key={user.id} className="hover:bg-slate-50/30 transition-colors group">
-                    <td className="px-8 py-5">
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-primary-50 text-primary-600 rounded-2xl flex items-center justify-center font-black text-lg">
-                          {user.name.charAt(0)}
-                        </div>
-                        <div>
-                          <p className="text-sm font-black text-slate-900">{user.name}</p>
-                          <div className="flex items-center gap-2 text-[10px] text-slate-400 font-bold mt-0.5">
-                            <Mail className="w-3 h-3" /> {user.email}
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-8 py-5">
-                      <div className="flex items-center gap-2">
-                        <Shield className={`w-4 h-4 ${user.role === 'ADMIN' ? 'text-primary-600' : 'text-slate-400'}`} />
-                        <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">{user.role.replace('_', ' ')}</span>
-                      </div>
-                    </td>
-                    <td className="px-8 py-5">
-                      <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
-                        <MapPin className="w-4 h-4 text-slate-300" />
-                        {user.department}
-                      </div>
-                    </td>
-                    <td className="px-8 py-5">
-                      <button 
-                        onClick={() => toggleUserStatus(user.id, user.status || 'ACTIVE')}
-                        className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest transition-colors ${
-                          user.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-red-100 text-red-700 hover:bg-red-200'
-                        }`}
-                      >
-                        {user.status || 'ACTIVE'}
-                      </button>
-                    </td>
-                    <td className="px-8 py-5 text-right relative">
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); setActiveDropdown(activeDropdown === user.id ? null : user.id); }}
-                        className="p-2 hover:bg-slate-100 rounded-xl transition-all text-slate-400 hover:text-slate-900"
-                      >
-                        <MoreVertical className="w-5 h-5" />
-                      </button>
-                      
-                      {/* Action Dropdown */}
-                      <AnimatePresence>
-                        {activeDropdown === user.id && (
-                          <motion.div 
-                            initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                            animate={{ opacity: 1, y: 0, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.95 }}
-                            className="absolute right-12 top-10 w-48 bg-white rounded-2xl shadow-xl shadow-slate-200/50 border border-slate-100 overflow-hidden z-20 py-2"
-                            ref={dropdownRef}
-                          >
-                            <button 
-                              onClick={() => openEditModal(user)}
-                              className="w-full text-left px-4 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 transition-colors"
-                            >
-                              <Edit2 className="w-4 h-4 text-primary-500" />
-                              Edit User
-                            </button>
-                            <button 
-                              onClick={() => handleDeleteUser(user)}
-                              className="w-full text-left px-4 py-3 text-sm font-bold text-red-600 hover:bg-red-50 flex items-center gap-3 transition-colors"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                              Delete User
-                            </button>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <>
+            {/* Administrators Section */}
+            {filteredUsers.some(u => String(u.role).toUpperCase().includes('ADMIN')) && (
+              <section className="space-y-4">
+                <div className="flex items-center gap-3 px-4">
+                  <div className="w-10 h-10 bg-primary-50 text-primary-600 rounded-xl flex items-center justify-center">
+                    <Shield className="w-5 h-5" />
+                  </div>
+                  <h2 className="text-xl font-black text-slate-900 tracking-tight italic uppercase">System Administrators</h2>
+                  <span className="bg-primary-100 text-primary-700 px-3 py-1 rounded-lg text-[10px] font-black">{filteredUsers.filter(u => String(u.role).toUpperCase().includes('ADMIN')).length}</span>
+                </div>
+                {renderTable(filteredUsers.filter(u => String(u.role).toUpperCase().includes('ADMIN')))}
+              </section>
+            )}
+
+            {/* HR Officers Section */}
+            {filteredUsers.some(u => String(u.role).toUpperCase().includes('HR')) && (
+              <section className="space-y-4">
+                <div className="flex items-center gap-3 px-4">
+                  <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center">
+                    <Users className="w-5 h-5" />
+                  </div>
+                  <h2 className="text-xl font-black text-slate-900 tracking-tight italic uppercase">HR Officers</h2>
+                  <span className="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-lg text-[10px] font-black">{filteredUsers.filter(u => String(u.role).toUpperCase().includes('HR')).length}</span>
+                </div>
+                {renderTable(filteredUsers.filter(u => String(u.role).toUpperCase().includes('HR')))}
+              </section>
+            )}
+
+            {/* Employees Section */}
+            {filteredUsers.some(u => String(u.role).toUpperCase().includes('EMPLOYEE')) && (
+              <section className="space-y-4">
+                <div className="flex items-center gap-3 px-4">
+                  <div className="w-10 h-10 bg-slate-50 text-slate-600 rounded-xl flex items-center justify-center">
+                    <Users className="w-5 h-5" />
+                  </div>
+                  <h2 className="text-xl font-black text-slate-900 tracking-tight italic uppercase">Active Staff / Employees</h2>
+                  <span className="bg-slate-100 text-slate-700 px-3 py-1 rounded-lg text-[10px] font-black">{filteredUsers.filter(u => String(u.role).toUpperCase().includes('EMPLOYEE')).length}</span>
+                </div>
+                {renderTable(filteredUsers.filter(u => String(u.role).toUpperCase().includes('EMPLOYEE')))}
+              </section>
+            )}
+            
+            {filteredUsers.length === 0 && (
+              <div className="glass-card rounded-[2.5rem] min-h-[300px] flex flex-col items-center justify-center border border-slate-100 shadow-sm relative py-12">
+                <Search className="w-12 h-12 text-slate-200 mb-4" />
+                <p className="text-slate-400 font-bold italic">No matching users found.</p>
+              </div>
+            )}
+          </>
         )}
       </div>
 
