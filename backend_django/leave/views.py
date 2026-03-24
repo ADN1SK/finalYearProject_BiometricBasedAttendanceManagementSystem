@@ -14,12 +14,13 @@ def get_user_from_request(request):
         return request.user
     return None
 
-def is_hr_officer(user):
-    # Checks if the user has the 'HR_OFFICER' role.
-    # Assumes roles are pre-populated in the database.
+def is_admin(user):
+    # Checks if the user is a superuser or has the 'Administrator' role.
+    if user.is_superuser:
+        return True
     try:
-        hr_role = Role.objects.get(name='HR_OFFICER')
-        return user.roles.filter(id=hr_role.id).exists()
+        admin_role = Role.objects.get(name='Administrator')
+        return user.roles.filter(id=admin_role.id).exists()
     except Role.DoesNotExist:
         return False
 
@@ -40,6 +41,8 @@ def submit_leave_request(request):
         start_date_str = data.get('start_date')
         end_date_str = data.get('end_date')
 
+        reason = data.get('reason', '')
+        
         if not all([leave_type, start_date_str, end_date_str]):
             return JsonResponse({'error': 'Missing required fields'}, status=400)
 
@@ -54,6 +57,7 @@ def submit_leave_request(request):
             leave_type=leave_type,
             start_date=start_date,
             end_date=end_date,
+            reason=reason,
             status=LeaveRequest.LeaveStatus.PENDING
         )
 
@@ -84,14 +88,29 @@ def view_my_leave_requests(request):
             'leave_type': req.get_leave_type_display(),
             'start_date': req.start_date,
             'end_date': req.end_date,
+            'reason': req.reason,
             'status': req.get_status_display(),
             'approved_by': req.approved_by.username if req.approved_by else None
         } for req in requests]
 
         # --- Calculate Dynamic Summary ---
-        # NOTE: In a production system, these allowances would be stored per-user.
-        ANNUAL_ALLOWANCE = 20
-        SICK_ALLOWANCE = 10
+        # Fetch allocations from Policy Table
+        try:
+            annual_policy = Policy.objects.filter(category='LEAVE', name__icontains='Annual').first()
+            medical_policy = Policy.objects.filter(category='LEAVE', name__icontains='Medical').first()
+            
+            # Extract numbers from policy value (e.g. "20 Days" -> 20)
+            def extract_quota(p, default):
+                if not p or not p.value: return default
+                import re
+                nums = re.findall(r'\d+', p.value)
+                return int(nums[0]) if nums else default
+
+            ANNUAL_ALLOWANCE = extract_quota(annual_policy, 20)
+            SICK_ALLOWANCE = extract_quota(medical_policy, 12)
+        except:
+            ANNUAL_ALLOWANCE = 20
+            SICK_ALLOWANCE = 10
         
         annual_taken = 0
         sick_taken = 0
@@ -122,8 +141,8 @@ def list_all_leave_requests(request):
         return JsonResponse({'error': 'Invalid request method'}, status=405)
 
     user = get_user_from_request(request)
-    if not user or not is_hr_officer(user):
-        return JsonResponse({'error': 'Permission denied. HR Officer role required.'}, status=403)
+    if not user or not is_admin(user):
+        return JsonResponse({'error': 'Permission denied. Administrator role required.'}, status=403)
 
     try:
         # HR can filter by status (e.g., /?status=PENDING)
@@ -132,13 +151,12 @@ def list_all_leave_requests(request):
         if status_filter and status_filter.upper() in LeaveRequest.LeaveStatus.values:
             query = query.filter(status=status_filter.upper())
 
-        requests = query.order_by('start_date').select_related('user')
-        data = [{
-            'id': req.id,
+        requests = query.order_by('start_date').select_related('user').defer('reason')
+        data = [{'id': str(req.id),
             'employee_name': req.user.get_full_name() or req.user.username,
             'leave_type': req.get_leave_type_display(),
-            'start_date': req.start_date,
-            'end_date': req.end_date,
+            'start_date': str(req.start_date),
+            'end_date': str(req.end_date),
             'status': req.get_status_display(),
         } for req in requests]
         return JsonResponse({'success': True, 'leave_requests': data})
@@ -150,8 +168,8 @@ def list_all_leave_requests(request):
 @csrf_exempt
 def manage_leave_request(request, request_id):
     user = get_user_from_request(request)
-    if not user or not is_hr_officer(user):
-        return JsonResponse({'error': 'Permission denied. HR Officer role required.'}, status=403)
+    if not user or not is_admin(user):
+        return JsonResponse({'error': 'Permission denied. Administrator role required.'}, status=403)
 
     try:
         leave_request = LeaveRequest.objects.get(pk=request_id)
@@ -197,17 +215,24 @@ def manage_leave_request(request, request_id):
 @csrf_exempt
 def policy_list_create(request):
     user = get_user_from_request(request)
-    if not user or not is_hr_officer(user):
-        return JsonResponse({'error': 'Permission denied. HR Officer role required.'}, status=403)
+    if not user or not is_admin(user):
+        return JsonResponse({'error': 'Permission denied. Administrator role required.'}, status=403)
 
     if request.method == 'GET':
+        category_filter = request.GET.get('category')
         policies = Policy.objects.all()
+        if category_filter:
+            policies = policies.filter(category=category_filter.upper())
         data = [{
             'id': p.id,
             'name': p.name,
+            'category': p.category,
+            'urgency': p.urgency,
             'description': p.description,
             'value': p.value,
             'is_active': p.is_active,
+            'rules': p.rules,
+            'departmentId': p.department_id,
         } for p in policies]
         return JsonResponse({'success': True, 'policies': data})
 
@@ -216,9 +241,13 @@ def policy_list_create(request):
             data = json.loads(request.body)
             policy = Policy.objects.create(
                 name=data['name'],
+                category=data.get('category', Policy.PolicyType.ATTENDANCE),
+                urgency=data.get('urgency', Policy.PolicyUrgency.MEDIUM),
                 description=data.get('description', ''),
-                value=data['value'],
-                is_active=data.get('is_active', True)
+                value=data.get('value', '0'),
+                is_active=data.get('is_active', True),
+                rules=data.get('rules', {}),
+                department_id=data.get('departmentId')
             )
             return JsonResponse({'success': True, 'message': 'Policy created', 'id': policy.id}, status=201)
         except Exception as e:
@@ -228,8 +257,8 @@ def policy_list_create(request):
 @csrf_exempt
 def policy_detail(request, policy_id):
     user = get_user_from_request(request)
-    if not user or not is_hr_officer(user):
-        return JsonResponse({'error': 'Permission denied. HR Officer role required.'}, status=403)
+    if not user or not is_admin(user):
+        return JsonResponse({'error': 'Permission denied. Administrator role required.'}, status=403)
 
     try:
         policy = Policy.objects.get(pk=policy_id)
@@ -242,9 +271,13 @@ def policy_detail(request, policy_id):
             'policy': {
                 'id': policy.id,
                 'name': policy.name,
+                'category': policy.category,
+                'urgency': policy.urgency,
                 'description': policy.description,
                 'value': policy.value,
                 'is_active': policy.is_active,
+                'rules': policy.rules,
+                'departmentId': policy.department_id,
             }
         })
 
@@ -252,9 +285,15 @@ def policy_detail(request, policy_id):
         try:
             data = json.loads(request.body)
             policy.name = data.get('name', policy.name)
+            policy.category = data.get('category', policy.category)
+            policy.urgency = data.get('urgency', policy.urgency)
             policy.description = data.get('description', policy.description)
             policy.value = data.get('value', policy.value)
             policy.is_active = data.get('is_active', policy.is_active)
+            if 'rules' in data:
+                policy.rules = data['rules']
+            if 'departmentId' in data:
+                policy.department_id = data['departmentId']
             policy.save()
             return JsonResponse({'success': True, 'message': 'Policy updated'})
         except Exception as e:
@@ -262,6 +301,6 @@ def policy_detail(request, policy_id):
 
     if request.method == 'DELETE':
         policy.delete()
-        return JsonResponse({'success': True, 'message': 'Policy deleted'}, status=204)
+        return JsonResponse({'success': True, 'message': 'Policy deleted'}, status=200)
 
     return JsonResponse({'error': 'Method not allowed'}, status=405)

@@ -18,7 +18,8 @@ from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from django.contrib.auth.decorators import login_required
 
 from django.utils import timezone
-from .models import EmployeeDetail, BiometricTemplate, Department, Role, UserRole
+from .models import EmployeeDetail, BiometricTemplate, Department, Role, UserRole, Workflow, ExternalIntegration
+from .utils import PayrollSyncService
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -44,6 +45,13 @@ def api_login(request):
 
             user = authenticate(request, username=username, password=password)
             if user is not None:
+                # Security Check: Reject suspended accounts
+                if user.status == User.Status.SUSPENDED:
+                    return JsonResponse({
+                        'success': False, 
+                        'error': 'This account has been suspended. Please contact the administrator.'
+                    }, status=403)
+
                 # Validate selected role against actual user roles
                 if role == 'ADMIN' and not user.is_administrator:
                     return JsonResponse({'success': False, 'error': 'Account does not have Administrator privileges'}, status=403)
@@ -164,6 +172,10 @@ def api_create_user(request):
         user.save()
         
         # Assign Role
+        # Security Policy: Only admin and elsa can have the Administrator role
+        if role_name == Role.ADMINISTRATOR and username not in ['admin', 'elsa']:
+            return JsonResponse({'success': False, 'error': 'Only designated system accounts can hold the Administrator role.'}, status=403)
+
         role, _ = Role.objects.get_or_create(name=role_name)
         UserRole.objects.create(user=user, role=role)
         
@@ -183,6 +195,13 @@ def api_create_user(request):
 def api_update_user(request, user_id):
     user = get_object_or_404(User, id=user_id)
     if request.method == 'PATCH':
+        # Security Policy: Designated superusers (admin, elsa) cannot be edited or suspended
+        if user.username in ['admin', 'elsa']:
+            return JsonResponse({
+                'success': False, 
+                'error': 'Critical System Account: Designated superusers cannot be modified via this interface for security reasons.'
+            }, status=403)
+
         try:
             data = json.loads(request.body)
             if 'status' in data:
@@ -193,6 +212,10 @@ def api_update_user(request, user_id):
             
             if 'role' in data:
                 role_name = data['role']
+                # Security Policy: Only admin and elsa can have the Administrator role
+                if role_name == Role.ADMINISTRATOR and user.username not in ['admin', 'elsa']:
+                    return JsonResponse({'success': False, 'error': 'Unauthorized: Only designated system accounts can hold the Administrator role.'}, status=403)
+
                 role, _ = Role.objects.get_or_create(name=role_name)
                 # Overwrite existing roles for this simplified model
                 user.roles.clear()
@@ -222,6 +245,13 @@ def api_delete_user(request, user_id):
     if request.method == 'DELETE':
         try:
             user = get_object_or_404(User, id=user_id)
+            # Security Policy: Designated superusers (admin, elsa) cannot be deleted
+            if user.username in ['admin', 'elsa']:
+                return JsonResponse({
+                    'success': False, 
+                    'error': 'Critical System Account: This account is required for system operation and cannot be deleted.'
+                }, status=403)
+                
             user.delete()
             return JsonResponse({'success': True, 'message': 'User deleted successfully.'})
         except Exception as e:
@@ -287,6 +317,179 @@ def api_delete_workflow(request, workflow_id):
         workflow = get_object_or_404(Workflow, id=workflow_id)
         workflow.delete()
         return JsonResponse({'success': True, 'message': 'Workflow deleted successfully'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@csrf_exempt
+def api_list_integrations(request):
+    """Returns all third-party integrations, initializing defaults if empty."""
+    if not request.user.is_authenticated or not request.user.is_staff:
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+        
+    # Auto-initialize some defaults if table is empty
+    if ExternalIntegration.objects.count() == 0:
+        ExternalIntegration.objects.create(
+            name="Payroll Hub Pro",
+            description="Automated synchronization of attendance hours with the institutional payroll system.",
+            type=ExternalIntegration.IntegrationType.PAYROLL,
+            status=ExternalIntegration.IntegrationStatus.DISCONNECTED
+        )
+        ExternalIntegration.objects.create(
+            name="Cloud ERP Connector",
+            description="Real-time personnel and department data syncing for resource planning.",
+            type=ExternalIntegration.IntegrationType.ERP,
+            status=ExternalIntegration.IntegrationStatus.CONNECTED,
+            last_sync=timezone.now()
+        )
+        ExternalIntegration.objects.create(
+            name="Global Security Gateway",
+            description="Unified security protocol sync for terminal access control and firewall rules.",
+            type=ExternalIntegration.IntegrationType.SECURITY,
+            status=ExternalIntegration.IntegrationStatus.CONNECTED,
+            last_sync=timezone.now()
+        )
+
+    integrations = ExternalIntegration.objects.all().order_by('created_at')
+    data = []
+    for integration in integrations:
+        data.append({
+            'id': str(integration.id),
+            'name': integration.name,
+            'description': integration.description,
+            'type': integration.type,
+            'status': integration.status,
+            'endpoint_url': integration.endpoint_url,
+            'last_sync': integration.last_sync.strftime('%b %d, %H:%M %p') if integration.last_sync else 'Never',
+        })
+    
+    return JsonResponse({'success': True, 'integrations': data})
+
+@csrf_exempt
+def api_toggle_integration(request, integration_id):
+    """Toggles the connection status and updates last_sync if connecting."""
+    if not request.user.is_authenticated or not request.user.is_staff:
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+        
+    integration = get_object_or_404(ExternalIntegration, id=integration_id)
+    
+    if integration.status == ExternalIntegration.IntegrationStatus.CONNECTED:
+        integration.status = ExternalIntegration.IntegrationStatus.DISCONNECTED
+    else:
+        integration.status = ExternalIntegration.IntegrationStatus.CONNECTED
+        integration.last_sync = timezone.now()
+        
+    integration.save()
+    
+    return JsonResponse({
+        'success': True, 
+        'status': integration.status,
+        'last_sync': integration.last_sync.strftime('%b %d, %H:%M %p') if integration.last_sync else 'Never'
+    })
+
+@csrf_exempt
+def api_update_integration_config(request, integration_id):
+    """Updates the endpoint URL and API Key for an integration."""
+    if not request.user.is_authenticated or not request.user.is_staff:
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+        
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+        
+    try:
+        data = json.loads(request.body)
+        integration = get_object_or_404(ExternalIntegration, id=integration_id)
+        
+        if 'endpoint_url' in data:
+            integration.endpoint_url = data['endpoint_url']
+        if 'api_key' in data:
+            integration.api_key = data['api_key']
+            
+        integration.save()
+        return JsonResponse({'success': True, 'message': 'Configuration updated successfully.'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+@csrf_exempt
+def api_sync_integration(request, integration_id):
+    """Triggers a real-time data synchronization to the external system."""
+    if not request.user.is_authenticated or not request.user.is_staff:
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+        
+    integration = get_object_or_404(ExternalIntegration, id=integration_id)
+    
+    if integration.status != ExternalIntegration.IntegrationStatus.CONNECTED:
+        return JsonResponse({'success': False, 'error': 'Integration must be connected to sync.'}, status=400)
+        
+    success, message = PayrollSyncService.sync_to_external(integration)
+    
+    if success:
+        return JsonResponse({
+            'success': True, 
+            'message': message,
+            'last_sync': integration.last_sync.strftime('%b %d, %H:%M %p') if integration.last_sync else 'Just Now'
+        })
+    else:
+        return JsonResponse({'success': False, 'error': message}, status=500)
+
+@csrf_exempt
+def api_create_integration(request):
+    """Creates a new external integration connector."""
+    print(f"[DEBUG] api_create_integration: {request.method} {request.path} (User: {request.user})")
+    if not request.user.is_authenticated or not request.user.is_staff:
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+        
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+        
+    try:
+        data = json.loads(request.body)
+        name = data.get('name')
+        integration_type = data.get('type')
+        description = data.get('description', '')
+        
+        if not name or not integration_type:
+            return JsonResponse({'error': 'Name and Type are required.'}, status=400)
+            
+        integration = ExternalIntegration.objects.create(
+            name=name,
+            type=integration_type,
+            description=description,
+            status=ExternalIntegration.IntegrationStatus.DISCONNECTED
+        )
+        
+        return JsonResponse({
+            'success': True, 
+            'message': 'Connector created successfully.',
+            'integration': {
+                'id': str(integration.id),
+                'name': integration.name,
+                'type': integration.type,
+                'status': integration.status,
+                'last_sync': 'Never'
+            }
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+@csrf_exempt
+def api_delete_integration(request, integration_id):
+    """Deletes an existing external integration connector."""
+    if not request.user.is_authenticated or not request.user.is_staff:
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+        
+    if request.method != 'DELETE' and request.method != 'POST':
+        # Support both for UI flexibility
+        return JsonResponse({'error': 'POST or DELETE required'}, status=405)
+        
+    try:
+        integration = get_object_or_404(ExternalIntegration, id=integration_id)
+        integration.delete()
+        
+        return JsonResponse({
+            'success': True, 
+            'message': 'Connector removed successfully.'
+        })
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=400)
 

@@ -21,6 +21,14 @@ urlpatterns = [
     path('api/workflows/<uuid:workflow_id>/update/', views.api_update_workflow, name='api_workflow_update'),
     path('api/workflows/<uuid:workflow_id>/delete/', views.api_delete_workflow, name='api_workflow_delete'),
     
+    # Integrations
+    path('api/integrations/hub-register/', views.api_create_integration, name='api_integration_create'),
+    path('api/integrations/', views.api_list_integrations, name='api_integration_list'),
+    path('api/integrations/<uuid:integration_id>/toggle/', views.api_toggle_integration, name='api_integration_toggle'),
+    path('api/integrations/<uuid:integration_id>/sync/', views.api_sync_integration, name='api_integration_sync'),
+    path('api/integrations/<uuid:integration_id>/update-config/', views.api_update_integration_config, name='api_integration_update_config'),
+    path('api/integrations/<uuid:integration_id>/delete/', views.api_delete_integration, name='api_integration_delete'),
+    
     # Biometrics
     path('user/<uuid:user_id>/capture/', views.capture_face, name='capture_face'),
     path('user/<uuid:user_id>/verify/', views.verify_face, name='verify_face'),

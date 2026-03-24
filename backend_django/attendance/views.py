@@ -20,7 +20,8 @@ from mtcnn import MTCNN
 from accounts.models import BiometricTemplate, User, EmployeeDetail
 from scheduling.models import Assignment
 from .models import AttendanceRecord
-from leave.models import LeaveRequest
+from leave.models import LeaveRequest, Policy
+from leave.utils import PolicyResolver
 from scheduling.models import Shift
 
 # --- Logging Configuration ---
@@ -46,13 +47,14 @@ def load_known_embeddings():
 
     try:
         templates = list(BiometricTemplate.objects.filter(
-            type=BiometricTemplate.BiometricType.FACE
+            type=BiometricTemplate.BiometricType.FACE,
+            user__status=User.Status.ACTIVE # Exclude suspended users
         ).select_related('user'))
 
         if not templates:
             known_embeddings_matrix = None
             known_user_info = []
-            logger.warning("Cache Refresh: No face embeddings found in database.")
+            logger.warning("Cache Refresh: No active face embeddings found in database.")
             return
 
         known_user_info = [{
@@ -67,7 +69,7 @@ def load_known_embeddings():
         norms = np.linalg.norm(matrix, axis=1, keepdims=True)
         known_embeddings_matrix = matrix / norms
 
-        logger.info(f"Cache Refresh: Loaded {len(known_user_info)} face embeddings into memory.")
+        logger.info(f"Cache Refresh: Loaded {len(known_user_info)} ACTIVE face embeddings into memory.")
     except Exception as e:
         logger.error(f"Failed to load embeddings into memory: {e}")
 
@@ -142,6 +144,8 @@ def find_best_match(query_embedding, threshold=0.6): # Lowered threshold
     return None, min_distance
 
 
+from .config_utils import read_global_config
+
 # --- Main Attendance API View ---
 @csrf_exempt
 def mark_attendance(request):
@@ -149,8 +153,15 @@ def mark_attendance(request):
         return JsonResponse({'error': 'Invalid request method'}, status=405)
 
     try:
+        config = read_global_config()
+        is_strict = config.get('biometric_lock_active', True)
+        is_realtime = config.get('real_time_validation', True)
+
         data = json.loads(request.body)
         image_data = data.get('image')
+        # Allow passing userId directly if we are in maintenance bypass or authenticated
+        provided_user_id = data.get('userId') 
+
         if not image_data:
             return JsonResponse({'error': 'No image data provided'}, status=400)
 
@@ -177,35 +188,73 @@ def mark_attendance(request):
         if len(faces) == 0:
             logger.warning("Attendance Failed: No face detected in request.")
             return JsonResponse({'error': 'Face not found in guide. Please align correctly.'}, status=400)
-        if len(faces) > 1:
-            logger.warning(f"Attendance Failed: {len(faces)} faces detected. Only one allowed.")
-            return JsonResponse({'error': 'Multiple faces detected. One person at a time.'}, status=400)
-
+        
         x, y, w, h = faces[0]
         face_img = image_array[y:y + h, x:x + w]
 
         # 1. Liveness Check (Heuristic)
         is_live, liveness_msg = is_live_face(face_img)
-        if not is_live:
+        if not is_live and is_strict:
             logger.error(f"Security Alert: Heuristic Spoof Detection. {liveness_msg}")
             return JsonResponse({'error': 'Biometric verification failed (Liveness).'}, status=403)
 
-        # 2. Embedding & Recognition (Deepface)
-        live_embedding = extract_embedding(face_img)
-        if live_embedding is None:
-            return JsonResponse({'error': 'Biometric processing failed. Try better lighting.'}, status=500)
+        # Initialize core variables
+        user = None
+        current_status_flag = AttendanceRecord.VerificationStatus.VERIFIED
+        match = None
+        distance = 0.0
 
-        # 3. Recognition Match
-        match, distance = find_best_match(np.array(live_embedding))
-        if not match:
-            logger.info(f"Recognition Failed: Unknown person (Best dist: {distance:.4f})")
+        # 2. Recognition Logic based on Configuration
+        if is_realtime:
+            # Full Real-time DeepFace Validation
+            live_embedding = extract_embedding(face_img)
+            if live_embedding is None:
+                return JsonResponse({'error': 'Biometric processing failed. Try better lighting.'}, status=500)
+
+            # Adjust threshold for match based on strictness
+            threshold = 0.6 if is_strict else 0.85
+            match, distance = find_best_match(np.array(live_embedding), threshold=threshold)
+            
+            if not match:
+                if is_strict:
+                    logger.info(f"Recognition Failed (Strict): Unknown person (Best dist: {distance:.4f})")
+                    return JsonResponse({'error': 'Identity not recognized. Ensure you are enrolled.'}, status=401)
+                else:
+                    # Maintenance Bypass: Try to use provided ID if biometric failed
+                    if provided_user_id:
+                        try:
+                            user = User.objects.get(id=provided_user_id)
+                            current_status_flag = AttendanceRecord.VerificationStatus.UNVERIFIED
+                        except User.DoesNotExist:
+                            pass
+            else:
+                user = User.objects.get(id=match['user_id'])
+                if not is_strict:
+                    current_status_flag = AttendanceRecord.VerificationStatus.UNVERIFIED
+        else:
+            # Deferred Processing Mode
+            current_status_flag = AttendanceRecord.VerificationStatus.PENDING
+            if provided_user_id:
+                try:
+                    user = User.objects.get(id=provided_user_id)
+                except User.DoesNotExist:
+                    return JsonResponse({'error': 'Deferred processing requires a valid User ID.'}, status=400)
+            else:
+                # If no ID provided and real-time is OFF, we can't identify the user
+                # We could try a "Quick Match" or just fail
+                return JsonResponse({'error': 'Deferred Processing requires User ID or Real-time Validation.'}, status=400)
+
+        if not user:
+            return JsonResponse({'error': 'Identity identification failed.'}, status=401)
+
+        # 3. Security Check: Reject suspended accounts
+        if user.status == User.Status.SUSPENDED:
+            logger.warning(f"Security Alert: Suspended user {user.username} (ID: {user.id}) attempted biometric verification.")
             return JsonResponse({
-                'error': 'Identity not recognized. Ensure you are enrolled.',
-                'distance': float(distance) # For debugging/logging
-            }, status=401)
+                'error': 'Attendance rejected. Your account is currently suspended. Please contact HR.'
+            }, status=403)
 
         # --- Attendance Logic ---
-        user = User.objects.get(id=match['user_id'])
         now = timezone.now()
         today = now.date()
 
@@ -242,11 +291,23 @@ def mark_attendance(request):
 
         if assignment:
             shift = assignment.shift
+            
+            # Create timezone-aware datetimes for comparison
+            shift_start_dt = timezone.make_aware(datetime.combine(today, shift.start_time))
+            shift_end_dt = timezone.make_aware(datetime.combine(today, shift.end_time))
+
             if record_type == AttendanceRecord.RecordType.CHECK_IN:
-                if current_time > shift.start_time:
+                # Resolve Grace Period Policy
+                grace_policy = PolicyResolver.get_active_policy('Grace Period', user.employee_detail.department_id if hasattr(user, 'employee_detail') else None)
+                
+                if PolicyResolver.is_late(now, shift_start_dt, grace_policy):
                     status = AttendanceRecord.RecordStatus.LATE
+                else:
+                    status = AttendanceRecord.RecordStatus.ON_TIME
+            
             elif record_type == AttendanceRecord.RecordType.CHECK_OUT:
-                if current_time < shift.end_time:
+                # Basic Early Exit Check (Can be further refined with 'Early Exit' policy)
+                if now < shift_end_dt:
                     status = AttendanceRecord.RecordStatus.EARLY_EXIT
                 else:
                     status = AttendanceRecord.RecordStatus.ON_TIME
@@ -255,17 +316,19 @@ def mark_attendance(request):
             user=user, 
             timestamp=now, 
             type=record_type, 
-            status=status
+            status=status,
+            verification_status=current_status_flag if current_status_flag else AttendanceRecord.VerificationStatus.VERIFIED
         )
 
-        logger.info(f"Attendance Success: {user.username} | {record_type} | Status: {status} | Dist: {distance:.4f}")
+        logger.info(f"Attendance Success: {user.username} | {record_type} | Status: {status} | Verif: {new_record.verification_status} | Dist: {distance:.4f}")
 
         return JsonResponse({
             'success': True,
             'type': record_type,
             'username': user.username,
             'status': status,
-            'message': f"Successfully {record_type.label.lower()}.",
+            'verification_status': new_record.verification_status,
+            'message': f"Successfully {record_type.label.lower()} (Mode: {new_record.verification_status.label}).",
             'timestamp': new_record.timestamp.isoformat()
         })
 
@@ -312,11 +375,12 @@ def api_dashboard_stats(request):
     try:
         if user.is_administrator:
             total_employees = User.objects.count()
-            active_employees = User.objects.filter(is_active=True).count()
+            active_employees = User.objects.filter(status=User.Status.ACTIVE).count()
+            suspended_employees = User.objects.filter(status=User.Status.SUSPENDED).count()
             stats = {
                 'totalEmployees': total_employees,
                 'activeEmployees': active_employees,
-                'dormantEmployees': total_employees - active_employees,
+                'suspendedEmployees': suspended_employees,
                 'faceEnrolled': EmployeeDetail.objects.filter(biometric_enrolled=True).count()
             }
         elif user.is_hr_officer:
@@ -375,9 +439,58 @@ def api_list_all_attendance(request):
                 'timestamp': r.timestamp.isoformat(),
                 'type': r.get_type_display(),
                 'status': r.get_status_display(),
+                'verification': r.get_verification_status_display(),
                 'date': r.timestamp.date().strftime('%b %d, %Y'),
                 'time': r.timestamp.time().strftime('%H:%M %p')
             })
         return JsonResponse({'success': True, 'records': data})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+@csrf_exempt
+def api_update_attendance_verification(request, record_id):
+    """Admin only: Manually overrides the verification status of an attendance record."""
+    if not request.user.is_authenticated or not request.user.is_staff:
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+    
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+        
+    try:
+        data = json.loads(request.body)
+        new_status = data.get('status')
+        # Check against model choices (VERIFIED, UNVERIFIED, PENDING)
+        if not new_status:
+            return JsonResponse({'error': 'Missing status'}, status=400)
+            
+        record = AttendanceRecord.objects.get(id=record_id)
+        record.verification_status = new_status
+        record.save()
+        
+        return JsonResponse({
+            'success': True, 
+            'message': f'Record marked as {record.get_verification_status_display()}.',
+            'new_status': record.get_verification_status_display()
+        })
+    except AttendanceRecord.DoesNotExist:
+        return JsonResponse({'error': 'Attendance record not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+def api_delete_attendance_record(request, record_id):
+    """Superuser only: Deletes an attendance record."""
+    if not request.user.is_authenticated or not request.user.is_superuser:
+        return JsonResponse({'error': 'Permission denied. Superuser required.'}, status=403)
+        
+    if request.method != 'DELETE':
+        return JsonResponse({'error': 'DELETE required'}, status=405)
+        
+    try:
+        record = AttendanceRecord.objects.get(id=record_id)
+        record.delete()
+        return JsonResponse({'success': True, 'message': 'Attendance record permanently removed.'})
+    except AttendanceRecord.DoesNotExist:
+        return JsonResponse({'error': 'Attendance record not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)

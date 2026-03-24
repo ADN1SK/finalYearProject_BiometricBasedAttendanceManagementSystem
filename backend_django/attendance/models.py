@@ -24,9 +24,19 @@ class AttendanceRecord(models.Model):
         EARLY_EXIT = 'EARLY_EXIT', 'Early-exit'
         OVERTIME = 'OVERTIME', 'Overtime'
 
+    class VerificationStatus(models.TextChoices):
+        VERIFIED = 'VERIFIED', 'Verified'
+        UNVERIFIED = 'UNVERIFIED', 'Unverified (Bypass)'
+        PENDING = 'PENDING', 'Pending Validation'
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, db_column='_id')
     user = models.ForeignKey(User, on_delete=models.CASCADE, db_column='userId')
     device = models.ForeignKey(Device, on_delete=models.SET_NULL, null=True, blank=True, db_column='deviceId')
     timestamp = models.DateTimeField()
     type = models.CharField(max_length=50, choices=RecordType.choices)
     status = models.CharField(max_length=50, choices=RecordStatus.choices)
+    verification_status = models.CharField(
+        max_length=50, 
+        choices=VerificationStatus.choices, 
+        default=VerificationStatus.VERIFIED
+    )
