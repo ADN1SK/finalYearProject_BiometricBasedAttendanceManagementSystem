@@ -12,6 +12,7 @@ urlpatterns = [
     path('api/users/', views.api_list_users, name='api_user_list'),
     path('api/users/create/', views.api_create_user, name='api_user_create'),
     path('api/users/<uuid:user_id>/update/', views.api_update_user, name='api_user_update'),
+    path('api/users/<uuid:user_id>/delete/', views.api_delete_user, name='api_delete_user'),
     path('api/departments/', views.api_list_departments, name='api_department_list'),
     
     # Biometrics

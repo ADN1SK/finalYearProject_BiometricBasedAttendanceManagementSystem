@@ -1,11 +1,13 @@
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from attendance.models import AttendanceRecord
+from attendance.models import AttendanceRecord, Device
 from accounts.models import User, Role
 from datetime import datetime, timedelta
 from django.db.models import F, ExpressionWrapper, fields
 from django.contrib.auth.decorators import login_required
 from .models import Notification, AuditLog
+from django.db import connection
+from django.utils import timezone
 
 # --- Permission Helpers (Should be moved to a central utility module) ---
 
@@ -195,15 +197,20 @@ def get_system_health(request):
     if not request.user.is_authenticated or (not request.user.is_superuser and not is_hr_officer(request.user)):
         return JsonResponse({'error': 'Permission denied'}, status=403)
     
-    # In a real system, these would come from monitoring tools/redis
-    import random
+    try:
+        # Check database connectivity
+        connection.ensure_connection()
+        db_status = 'OPTIMAL'
+    except Exception:
+        db_status = 'ERROR'
+
+    active_terminals = Device.objects.filter(status='active').count()
+    
     data = {
         'success': True,
         'health': {
-            'db_status': 'OPTIMAL',
-            'api_latency': f"{random.randint(12, 28)}ms",
-            'active_terminals': '04 ACTIVE',
-            'uptime': '99.98%',
+            'db_status': db_status,
+            'active_terminals': f'{active_terminals:02d} ACTIVE',
             'last_sync': timezone.now().isoformat()
         }
     }

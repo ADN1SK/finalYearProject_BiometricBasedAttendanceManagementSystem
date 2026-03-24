@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Users, Calendar, FileText, Fingerprint, Clock, AlertCircle, LayoutDashboard, CheckCircle2, XCircle, Wifi, Zap, Activity, Shield, Settings } from 'lucide-react';
 import { motion } from 'motion/react';
 import { User } from '../types';
@@ -14,17 +15,14 @@ export const OverviewView = ({ user }: OverviewViewProps) => {
   const [history, setHistory] = useState<any[]>([]);
   const [health, setHealth] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        let statsEndpoint = '/api/attendance/my-stats/';
-        if (user.role === 'ADMIN') statsEndpoint = '/api/attendance/admin-stats/';
-        else if (user.role === 'HR_OFFICER') statsEndpoint = '/api/attendance/hr-stats/';
-
         const [statsRes, historyRes, healthRes] = await Promise.all([
-          apiRequest(statsEndpoint),
+          apiRequest('/api/attendance/dashboard-stats/'),
           user.role === 'EMPLOYEE' ? apiRequest('/api/attendance/my-history/') : Promise.resolve({ success: true, records: [] }),
           user.role === 'ADMIN' ? apiRequest('/api/reporting/system-health/') : Promise.resolve({ success: true, health: null })
         ]);
@@ -45,10 +43,10 @@ export const OverviewView = ({ user }: OverviewViewProps) => {
   const renderAdminView = () => (
     <div className="space-y-8">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard title="Total Staff" value={String(stats?.totalStaff || 0)} icon={Users} colorClass="bg-blue-100 text-blue-600" delay={0.1} />
-        <StatCard title="Active Staff" value={String(stats?.activeStaff || 0)} icon={CheckCircle2} colorClass="bg-emerald-100 text-emerald-600" delay={0.2} />
-        <StatCard title="Inactive Staff" value={String(stats?.inactiveStaff || 0)} icon={XCircle} colorClass="bg-red-100 text-red-600" delay={0.3} />
-        <StatCard title="Biometric Enrolled" value={String(stats?.enrolledStaff || 0)} icon={Fingerprint} colorClass="bg-purple-100 text-purple-600" delay={0.4} />
+        <StatCard title="Total Employees" value={String(stats?.totalEmployees || 0)} icon={Users} colorClass="bg-blue-100 text-blue-600" delay={0.1} />
+        <StatCard title="Currently Working Staff" value={String(stats?.activeEmployees || 0)} icon={CheckCircle2} colorClass="bg-emerald-100 text-emerald-600" delay={0.2} />
+        <StatCard title="Dormant" value={String(stats?.dormantEmployees || 0)} icon={XCircle} colorClass="bg-red-100 text-red-600" delay={0.3} />
+        <StatCard title="Face Enrolled" value={String(stats?.faceEnrolled || 0)} icon={Fingerprint} colorClass="bg-purple-100 text-purple-600" delay={0.4} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -63,7 +61,7 @@ export const OverviewView = ({ user }: OverviewViewProps) => {
               ].map((node, idx) => (
                 <button 
                   key={idx} 
-                  onClick={() => window.location.assign(node.path)}
+                  onClick={() => navigate(node.path)}
                   className="p-4 bg-white rounded-2xl border border-slate-50 flex flex-col gap-3 group hover:border-primary-100 transition-all text-left w-full"
                 >
                   <div className={`w-10 h-10 rounded-xl ${node.bg} ${node.color} flex items-center justify-center group-hover:scale-110 transition-transform`}>
@@ -98,13 +96,13 @@ export const OverviewView = ({ user }: OverviewViewProps) => {
                     <Zap className="w-5 h-5" />
                   </div>
                   <div>
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">API Engine</p>
-                    <p className="text-xs font-black text-slate-900 italic uppercase">{health?.api_latency || 'OPTIMIZING'}</p>
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">DB Status</p>
+                    <p className="text-xs font-black text-slate-900 italic uppercase">{health?.db_status || 'CHECKING'}</p>
                   </div>
                </div>
             </div>
             <button 
-              onClick={() => window.location.assign('/auditlogs')}
+              onClick={() => navigate('/auditlogs')}
               className="w-full mt-6 py-4 bg-primary-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-primary-200 transition-all hover:bg-primary-700"
             >
               Run Full Diagnostic

@@ -187,11 +187,46 @@ def api_update_user(request, user_id):
             data = json.loads(request.body)
             if 'status' in data:
                 user.status = data['status']
-                user.save()
+            if 'email' in data:
+                user.email = data['email']
+            user.save()
+            
+            if 'role' in data:
+                role_name = data['role']
+                role, _ = Role.objects.get_or_create(name=role_name)
+                # Overwrite existing roles for this simplified model
+                user.roles.clear()
+                UserRole.objects.create(user=user, role=role)
+                
+            if 'department_id' in data:
+                dept_id = data['department_id']
+                if hasattr(user, 'employeedetail'):
+                    user.employeedetail.department_id = dept_id
+                    user.employeedetail.save()
+                else:
+                    EmployeeDetail.objects.create(
+                        user=user,
+                        department_id=dept_id,
+                        hire_date=timezone.now().date()
+                    )
+
             return JsonResponse({'success': True})
         except Exception as e:
             return JsonResponse({'success': False, 'error': str(e)}, status=400)
     return JsonResponse({'error': 'PATCH required'}, status=405)
+
+
+@csrf_exempt
+@login_required
+def api_delete_user(request, user_id):
+    if request.method == 'DELETE':
+        try:
+            user = get_object_or_404(User, id=user_id)
+            user.delete()
+            return JsonResponse({'success': True, 'message': 'User deleted successfully.'})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)}, status=400)
+    return JsonResponse({'error': 'DELETE required'}, status=405)
 
 
 # FAST DETECTOR (for /face/check/)
@@ -564,29 +599,23 @@ def verify_face(request, user_id):
         if len(embeddings) < 5:
             return JsonResponse({"success": False, "error": "Insufficient high-quality biometrics. Please recapture."})
 
-        avg = np.mean(embeddings, axis=0).tolist()
+        avg_embedding = np.mean(embeddings, axis=0)
 
-        if known_embeddings:
-            q = np.array(avg)
-            q = q / (np.linalg.norm(q) + 1e-7)
+        # Check for duplicates against all other users
+        existing_templates = BiometricTemplate.objects.exclude(user=user)
+        for template in existing_templates:
+            existing_embedding = np.array(template.template_data)
             
-            best_i = -1
-            best_s = 0
-
-            for i, emb in enumerate(known_embeddings):
-                e = emb / (np.linalg.norm(emb) + 1e-7)
-                sim = np.dot(q, e)
-                if sim > 0.8 and sim > best_s:
-                    best_s = sim
-                    best_i = i
-
-            if best_i != -1 and known_user_ids[best_i] != str(user.id):
-                return JsonResponse({"success": False, "error": f"Already used by {known_usernames[best_i]}"})
+            # Cosine similarity calculation
+            cosine_similarity = np.dot(avg_embedding, existing_embedding) / (np.linalg.norm(avg_embedding) * np.linalg.norm(existing_embedding))
+            
+            if cosine_similarity > 0.85: # Stricter threshold for duplicate check
+                return JsonResponse({"success": False, "error": f"This face is already registered to another user ({template.user.username})."})
 
         BiometricTemplate.objects.update_or_create(
             user=user,
             type=BiometricTemplate.BiometricType.FACE,
-            defaults={"template_data": avg},
+            defaults={"template_data": avg_embedding.tolist()},
         )
 
         EmployeeDetail.objects.update_or_create(

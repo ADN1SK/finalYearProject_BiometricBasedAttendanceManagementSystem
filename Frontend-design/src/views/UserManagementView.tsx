@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Users, UserPlus, Search, Filter, MoreVertical, Shield, Mail, MapPin, ChevronRight, RefreshCw, XCircle, CheckCircle2 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Users, UserPlus, Search, Filter, MoreVertical, Shield, Mail, MapPin, ChevronRight, RefreshCw, XCircle, CheckCircle2, Edit2, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { apiRequest } from '../api/client';
 import { User } from '../types';
@@ -11,6 +11,9 @@ export const UserManagementView = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDept, setSelectedDept] = useState('All');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Create User Form State
   const [newUserName, setNewUserName] = useState('');
@@ -18,6 +21,13 @@ export const UserManagementView = () => {
   const [newUserRole, setNewUserRole] = useState('Employee');
   const [newUserDept, setNewUserDept] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+
+  // Edit User Form State
+  const [editingUserId, setEditingUserId] = useState('');
+  const [editUserEmail, setEditUserEmail] = useState('');
+  const [editUserRole, setEditUserRole] = useState('Employee');
+  const [editUserDept, setEditUserDept] = useState('');
+  const [isUpdating, setIsUpdating] = useState(false);
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -36,6 +46,16 @@ export const UserManagementView = () => {
 
   useEffect(() => {
     fetchUsers();
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setActiveDropdown(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   const handleCreateUser = async (e: React.FormEvent) => {
@@ -65,6 +85,63 @@ export const UserManagementView = () => {
       alert("Error creating user");
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  const openEditModal = (user: User) => {
+    setActiveDropdown(null);
+    setEditingUserId(user.id);
+    setEditUserEmail(user.email);
+    // Normalize role string
+    let matchingRole = 'Employee';
+    const roleStr = String(user.role).toUpperCase();
+    if (roleStr.includes('HR') || roleStr === 'HR_OFFICER') matchingRole = 'HR Officer';
+    if (roleStr.includes('ADMIN') || roleStr === 'ADMINISTRATOR') matchingRole = 'Administrator';
+    setEditUserRole(matchingRole);
+    
+    const dept = departments.find(d => d.name === user.department);
+    setEditUserDept(dept ? dept.id : '');
+    setShowEditModal(true);
+  };
+
+  const handleUpdateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsUpdating(true);
+    try {
+      const res = await apiRequest(`/accounts/api/users/${editingUserId}/update/`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          email: editUserEmail,
+          role: editUserRole,
+          department_id: editUserDept
+        })
+      });
+      if (res.success) {
+        setShowEditModal(false);
+        fetchUsers();
+      } else {
+        alert(res.error || "Failed to update user");
+      }
+    } catch (err) {
+      alert("Error updating user");
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleDeleteUser = async (user: User) => {
+    setActiveDropdown(null);
+    if (window.confirm(`Are you sure you want to delete ${user.name}?`)) {
+      try {
+        const res = await apiRequest(`/accounts/api/users/${user.id}/delete/`, { method: 'DELETE' });
+        if (res.success) {
+          fetchUsers();
+        } else {
+          alert(res.error || "Failed to delete user");
+        }
+      } catch (err) {
+        alert("Error deleting user");
+      }
     }
   };
 
@@ -182,10 +259,41 @@ export const UserManagementView = () => {
                         {user.status || 'ACTIVE'}
                       </button>
                     </td>
-                    <td className="px-8 py-5 text-right">
-                      <button className="p-2 hover:bg-slate-100 rounded-xl transition-all text-slate-400 hover:text-slate-900">
+                    <td className="px-8 py-5 text-right relative">
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); setActiveDropdown(activeDropdown === user.id ? null : user.id); }}
+                        className="p-2 hover:bg-slate-100 rounded-xl transition-all text-slate-400 hover:text-slate-900"
+                      >
                         <MoreVertical className="w-5 h-5" />
                       </button>
+                      
+                      {/* Action Dropdown */}
+                      <AnimatePresence>
+                        {activeDropdown === user.id && (
+                          <motion.div 
+                            initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            className="absolute right-12 top-10 w-48 bg-white rounded-2xl shadow-xl shadow-slate-200/50 border border-slate-100 overflow-hidden z-20 py-2"
+                            ref={dropdownRef}
+                          >
+                            <button 
+                              onClick={() => openEditModal(user)}
+                              className="w-full text-left px-4 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 transition-colors"
+                            >
+                              <Edit2 className="w-4 h-4 text-primary-500" />
+                              Edit User
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteUser(user)}
+                              className="w-full text-left px-4 py-3 text-sm font-bold text-red-600 hover:bg-red-50 flex items-center gap-3 transition-colors"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                              Delete User
+                            </button>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </td>
                   </tr>
                 ))}
@@ -268,6 +376,76 @@ export const UserManagementView = () => {
                   className="w-full bg-primary-600 hover:bg-primary-700 text-white font-black py-5 rounded-3xl mt-6 transition-all shadow-xl shadow-primary-100 flex items-center justify-center gap-3 uppercase tracking-widest text-xs disabled:bg-slate-300"
                 >
                   {isCreating ? <RefreshCw className="w-5 h-5 animate-spin" /> : <span>Confirm Registration</span>}
+                </button>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Edit User Modal */}
+      <AnimatePresence>
+        {showEditModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="bg-white rounded-[2.5rem] p-8 w-full max-w-lg shadow-2xl relative"
+            >
+              <button 
+                onClick={() => setShowEditModal(false)}
+                className="absolute top-6 right-6 p-2 text-slate-400 hover:text-slate-900 transition-colors"
+              >
+                <XCircle className="w-6 h-6" />
+              </button>
+              
+              <h2 className="text-2xl font-black text-slate-900 mb-6">Edit Staff Profile</h2>
+              
+              <form onSubmit={handleUpdateUser} className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Email</label>
+                  <input 
+                    type="email"
+                    required
+                    value={editUserEmail}
+                    onChange={(e) => setEditUserEmail(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-4 text-sm focus:ring-2 focus:ring-primary-500 transition-all outline-none"
+                    placeholder="staff@example.com"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Role</label>
+                    <select 
+                      value={editUserRole}
+                      onChange={(e) => setEditUserRole(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-4 text-sm outline-none"
+                    >
+                      <option value="Employee">Employee</option>
+                      <option value="HR Officer">HR Officer</option>
+                      <option value="Administrator">Administrator</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Department</label>
+                    <select 
+                      required
+                      value={editUserDept}
+                      onChange={(e) => setEditUserDept(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-4 text-sm outline-none"
+                    >
+                      <option value="">Select Dept</option>
+                      {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+                
+                <button 
+                  disabled={isUpdating}
+                  className="w-full bg-primary-600 hover:bg-primary-700 text-white font-black py-5 rounded-3xl mt-6 transition-all shadow-xl shadow-primary-100 flex items-center justify-center gap-3 uppercase tracking-widest text-xs disabled:bg-slate-300"
+                >
+                  {isUpdating ? <RefreshCw className="w-5 h-5 animate-spin" /> : <span>Update Profile</span>}
                 </button>
               </form>
             </motion.div>

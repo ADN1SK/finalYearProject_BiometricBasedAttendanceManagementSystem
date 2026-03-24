@@ -13,7 +13,6 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
 from django.contrib.auth.decorators import login_required
-from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib.auth import get_user_model
 
 from mtcnn import MTCNN
@@ -21,6 +20,8 @@ from mtcnn import MTCNN
 from accounts.models import BiometricTemplate, User, EmployeeDetail
 from scheduling.models import Assignment
 from .models import AttendanceRecord
+from leave.models import LeaveRequest
+from scheduling.models import Shift
 
 # --- Logging Configuration ---
 # Standard logger for this module
@@ -82,46 +83,20 @@ def reload_embeddings(request):
 
 
 # --- Face Recognition Logic ---
-def extract_embedding(image_rgb, face_crop=None):
+def extract_embedding(image_rgb):
     try:
-        # 1. Primary Attempt: MTCNN on full image for best alignment (matching enrollment best-case)
+        # Standardize the process: resize, then generate embedding
+        resized_image = cv2.resize(image_rgb, (160, 160))
         embedding_objs = DeepFace.represent(
-            img_path=image_rgb, model_name='Facenet512',
-            enforce_detection=True, detector_backend='mtcnn',
-            anti_spoofing=False
+            img_path=resized_image, 
+            model_name='Facenet512',
+            enforce_detection=False, # Skip detection as we are passing a cropped face
+            detector_backend='skip'
         )
-        return embedding_objs[0]['embedding'], True
+        return embedding_objs[0]['embedding']
     except Exception as e:
-        logger.warning(f"MTCNN full-image detection failed: {e}. Trying crop-based detection...")
-        
-        try:
-            # 2. Secondary Attempt: Try MTCNN on the Haar-detected crop (more likely to succeed if face is small in frame)
-            if face_crop is not None:
-                embedding_objs = DeepFace.represent(
-                    img_path=face_crop, model_name='Facenet512',
-                    enforce_detection=True, detector_backend='mtcnn',
-                    anti_spoofing=False
-                )
-                return embedding_objs[0]['embedding'], True
-        except Exception as e2:
-            logger.warning(f"MTCNN crop-based detection failed: {e2}. Final fallback to enrollment-style 'skip'...")
-
-        try:
-            # 3. Final Fallback: Match enrollment logic precisely (Haar crop + skip detector)
-            target_img = face_crop if face_crop is not None else image_rgb
-            
-            # Match enrollment's 160x160 resizing exactly
-            if target_img is not None:
-                target_img = cv2.resize(target_img, (160, 160))
-                
-            embedding_objs = DeepFace.represent(
-                img_path=target_img, model_name='Facenet512',
-                enforce_detection=False, detector_backend='skip'
-            )
-            return embedding_objs[0]['embedding'], True
-        except Exception as e3:
-            logger.error(f"DeepFace final fallback extraction error: {e3}")
-            return None, False
+        logger.error(f"DeepFace embedding extraction error: {e}")
+        return None
 
 
 def is_live_face(face_img):
@@ -146,7 +121,7 @@ def is_live_face(face_img):
         return True, "Skipped"
 
 
-def find_best_match(query_embedding, threshold=0.8):
+def find_best_match(query_embedding, threshold=0.6): # Lowered threshold
     if known_embeddings_matrix is None:
         return None, float('inf')
 
@@ -156,24 +131,12 @@ def find_best_match(query_embedding, threshold=0.8):
 
     query_embedding_normalized = query_embedding / query_norm
     similarities = np.dot(known_embeddings_matrix, query_embedding_normalized)
-    # Ensure distances is at least a 1D array for safe indexing
     distances = np.atleast_1d(1 - similarities)
 
-    # Get the indices of the sorted distances
-    sorted_indices = np.argsort(distances)
-    best_match_index = sorted_indices[0]
+    best_match_index = np.argmin(distances)
     min_distance = float(distances[best_match_index])
 
     if min_distance < threshold:
-        # Extra safety: If the distance is borderline (e.g. > 0.7), 
-        # ensure there is a significant gap to the second best match.
-        if min_distance > 0.7 and len(distances) > 1:
-            second_best_dist = distances[sorted_indices[1]]
-            gap = second_best_dist - min_distance
-            if gap < 0.1: # If the gap is too small, it's ambiguous
-                logger.warning(f"Ambiguous Match: Best {min_distance:.4f}, Second {second_best_dist:.4f}. Rejecting.")
-                return None, min_distance
-        
         return known_user_info[best_match_index], min_distance
 
     return None, min_distance
@@ -228,8 +191,7 @@ def mark_attendance(request):
             return JsonResponse({'error': 'Biometric verification failed (Liveness).'}, status=403)
 
         # 2. Embedding & Recognition (Deepface)
-        # Passing full image_array to let DeepFace-MTCNN handle alignment consistently.
-        live_embedding, _ = extract_embedding(image_array, face_crop=face_img)
+        live_embedding = extract_embedding(face_img)
         if live_embedding is None:
             return JsonResponse({'error': 'Biometric processing failed. Try better lighting.'}, status=500)
 
@@ -259,7 +221,6 @@ def mark_attendance(request):
                 }, status=429)
 
         # 2. Daily Logic: Determine if CHECK_IN or CHECK_OUT
-        # If no record today, always CHECK_IN. Otherwise toggle based on last status today.
         records_today = AttendanceRecord.objects.filter(user=user, timestamp__date=today).order_by('-timestamp')
         
         if not records_today.exists():
@@ -288,7 +249,7 @@ def mark_attendance(request):
                 if current_time < shift.end_time:
                     status = AttendanceRecord.RecordStatus.EARLY_EXIT
                 else:
-                    status = AttendanceRecord.RecordStatus.ON_TIME # or OVERTIME
+                    status = AttendanceRecord.RecordStatus.ON_TIME
 
         new_record = AttendanceRecord.objects.create(
             user=user, 
@@ -340,31 +301,70 @@ def get_my_attendance_history(request):
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
-@staff_member_required
-def api_admin_stats(request):
-    """Returns global statistics for the Admin dashboard."""
+@login_required
+def api_dashboard_stats(request):
+    """
+    Returns dashboard statistics based on the user's role.
+    """
+    user = request.user
+    stats = {}
+
     try:
-        User = get_user_model()
-        total_staff = User.objects.all().count()
-        active_staff = User.objects.filter(is_active=True).count()
-        inactive_staff = total_staff - active_staff
-        enrolled_staff = EmployeeDetail.objects.filter(biometric_enrolled=True).count()
-        
-        return JsonResponse({
-            'success': True,
-            'stats': {
-                'totalStaff': total_staff,
-                'activeStaff': active_staff,
-                'inactiveStaff': inactive_staff,
-                'enrolledStaff': enrolled_staff
+        if user.is_administrator:
+            total_employees = User.objects.count()
+            active_employees = User.objects.filter(is_active=True).count()
+            stats = {
+                'totalEmployees': total_employees,
+                'activeEmployees': active_employees,
+                'dormantEmployees': total_employees - active_employees,
+                'faceEnrolled': EmployeeDetail.objects.filter(biometric_enrolled=True).count()
             }
-        })
+        elif user.is_hr_officer:
+            today = timezone.now().date()
+            stats = {
+                'totalEmployees': User.objects.count(),
+                'presentToday': AttendanceRecord.objects.filter(timestamp__date=today, type=AttendanceRecord.RecordType.CHECK_IN).values('user').distinct().count(),
+                'pendingLeaves': LeaveRequest.objects.filter(status='PENDING').count(),
+                'activeShifts': Shift.objects.count()
+            }
+        else: # Employee
+            now = timezone.now()
+            start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            records = AttendanceRecord.objects.filter(user=user, timestamp__gte=start_of_month)
+            
+            total_seconds = 0
+            days = records.values_list('timestamp__date', flat=True).distinct()
+            for d in days:
+                day_records = records.filter(timestamp__date=d).order_by('timestamp')
+                last_in = None
+                for r in day_records:
+                    if r.type == AttendanceRecord.RecordType.CHECK_IN:
+                        last_in = r.timestamp
+                    elif r.type == AttendanceRecord.RecordType.CHECK_OUT and last_in:
+                        total_seconds += (r.timestamp - last_in).total_seconds()
+                        last_in = None
+            
+            stats = {
+                'present_days': records.values('timestamp__date').distinct().count(),
+                'late_count': records.filter(status=AttendanceRecord.RecordStatus.LATE).count(),
+                'early_exit_count': records.filter(status=AttendanceRecord.RecordStatus.EARLY_EXIT).count(),
+                'total_hours': float(round(total_seconds / 3600.0, 1)),
+                'month_name': now.strftime('%B %Y')
+            }
+            
+        return JsonResponse({'success': True, 'stats': stats})
+
     except Exception as e:
+        logger.exception(f"Error fetching dashboard stats: {e}")
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
-@staff_member_required
+
+@login_required
 def api_list_all_attendance(request):
     """Lists attendance records for all users (Admin view)."""
+    if not request.user.is_staff:
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+        
     try:
         records = AttendanceRecord.objects.all().select_related('user').order_by('-timestamp')[:100]
         data = []
@@ -379,95 +379,5 @@ def api_list_all_attendance(request):
                 'time': r.timestamp.time().strftime('%H:%M %p')
             })
         return JsonResponse({'success': True, 'records': data})
-    except Exception as e:
-        return JsonResponse({'success': False, 'error': str(e)}, status=500)
-
-
-@login_required
-def get_my_attendance_stats(request):
-    """
-    Calculates monthly statistics for the current user.
-    """
-    try:
-        # Get start of current month
-        now = timezone.now()
-        start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        
-        # All records for this month
-        records = AttendanceRecord.objects.filter(user=request.user, timestamp__gte=start_of_month)
-        
-        # Statistics
-        present_days = records.values('timestamp__date').distinct().count()
-        late_count = records.filter(status=AttendanceRecord.RecordStatus.LATE).count()
-        early_exit_count = records.filter(status=AttendanceRecord.RecordStatus.EARLY_EXIT).count()
-        
-        # Calculate approximate total hours (simplified: sum of check-out - last check-in for each day)
-        total_seconds = 0
-        days = records.values_list('timestamp__date', flat=True).distinct()
-        for d in days:
-            day_records = records.filter(timestamp__date=d).order_by('timestamp')
-            # Pair check-ins with check-outs
-            last_in = None
-            for r in day_records:
-                if r.type == AttendanceRecord.RecordType.CHECK_IN:
-                    last_in = r.timestamp
-                elif r.type == AttendanceRecord.RecordType.CHECK_OUT and last_in:
-                    total_seconds += (r.timestamp - last_in).total_seconds()
-                    last_in = None
-        
-        total_hours = float(round(total_seconds / 3600.0, 1))
-
-        return JsonResponse({
-            'success': True,
-            'stats': {
-                'present_days': present_days,
-                'late_count': late_count,
-                'early_exit_count': early_exit_count,
-                'total_hours': total_hours,
-                'month_name': now.strftime('%B %Y')
-            }
-        })
-    except Exception as e:
-        logger.exception(f"Error calculating stats: {e}")
-        return JsonResponse({'success': False, 'error': str(e)}, status=500)
-
-
-@login_required
-def api_hr_stats(request):
-    """Returns statistics for the HR Officer dashboard."""
-    from accounts.models import Role
-    try:
-        hr_role = Role.objects.get(name='HR Officer')
-        if not request.user.roles.filter(id=hr_role.id).exists() and not request.user.is_superuser:
-            return JsonResponse({'error': 'Permission denied'}, status=403)
-    except Role.DoesNotExist:
-        if not request.user.is_superuser:
-            return JsonResponse({'error': 'Role configuration error'}, status=500)
-
-    try:
-        now = timezone.now()
-        today = now.date()
-        
-        total_employees = User.objects.count()
-        present_today = AttendanceRecord.objects.filter(
-            timestamp__date=today, 
-            type=AttendanceRecord.RecordType.CHECK_IN
-        ).values('user').distinct().count()
-        
-        from leave.models import LeaveRequest
-        pending_leaves = LeaveRequest.objects.filter(status='PENDING').count()
-        
-        from scheduling.models import Shift
-        active_shifts = Shift.objects.count()
-
-        return JsonResponse({
-            'success': True,
-            'stats': {
-                'totalEmployees': total_employees,
-                'presentToday': present_today,
-                'pendingLeaves': pending_leaves,
-                'activeShifts': active_shifts
-            }
-        })
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
