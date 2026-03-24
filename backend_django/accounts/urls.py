@@ -15,6 +15,12 @@ urlpatterns = [
     path('api/users/<uuid:user_id>/delete/', views.api_delete_user, name='api_delete_user'),
     path('api/departments/', views.api_list_departments, name='api_department_list'),
     
+    # Workflow API
+    path('api/workflows/', views.api_list_workflows, name='api_workflow_list'),
+    path('api/workflows/create/', views.api_create_workflow, name='api_workflow_create'),
+    path('api/workflows/<uuid:workflow_id>/update/', views.api_update_workflow, name='api_workflow_update'),
+    path('api/workflows/<uuid:workflow_id>/delete/', views.api_delete_workflow, name='api_workflow_delete'),
+    
     # Biometrics
     path('user/<uuid:user_id>/capture/', views.capture_face, name='capture_face'),
     path('user/<uuid:user_id>/verify/', views.verify_face, name='verify_face'),

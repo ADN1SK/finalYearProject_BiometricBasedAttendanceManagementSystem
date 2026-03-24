@@ -10,6 +10,10 @@ urlpatterns = [
     path('my-notifications/', views.get_my_notifications, name='get_my_notifications'),
     path('audit-logs/', views.get_audit_logs, name='get_audit_logs'),
     path('system-health/', views.get_system_health, name='get_system_health'),
+    
+    path('global-config/', views.get_global_config, name='get_global_config'),
+    path('global-config/update/', views.update_global_config, name='update_global_config'),
+    
     path('sync-biometrics/', views.sync_biometrics, name='sync_biometrics'),
     path('sanitize-logs/', views.sanitize_logs, name='sanitize_logs'),
     path('system-operation/<str:op_name>/', views.system_operation, name='system_operation'),

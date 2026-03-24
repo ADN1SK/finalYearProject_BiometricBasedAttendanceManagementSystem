@@ -228,6 +228,68 @@ def api_delete_user(request, user_id):
             return JsonResponse({'success': False, 'error': str(e)}, status=400)
     return JsonResponse({'error': 'DELETE required'}, status=405)
 
+# =====================================
+# WORKFLOW Endpoints
+# =====================================
+from .models import Workflow
+
+@csrf_exempt
+def api_list_workflows(request):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'GET required'}, status=405)
+    workflows = Workflow.objects.all()
+    data = []
+    for w in workflows:
+        data.append({
+            'id': str(w.id),
+            'name': w.name,
+            'steps': w.steps if w.steps else []
+        })
+    return JsonResponse({'success': True, 'workflows': data})
+
+@csrf_exempt
+def api_create_workflow(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    try:
+        data = json.loads(request.body)
+        name = data.get('name')
+        steps = data.get('steps', [])
+        
+        workflow = Workflow.objects.create(name=name, steps=steps)
+        return JsonResponse({'success': True, 'message': 'Workflow created successfully', 'id': str(workflow.id)})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+@csrf_exempt
+def api_update_workflow(request, workflow_id):
+    if request.method != 'PATCH':
+        return JsonResponse({'error': 'PATCH required'}, status=405)
+    try:
+        workflow = get_object_or_404(Workflow, id=workflow_id)
+        data = json.loads(request.body)
+        
+        if 'name' in data:
+            workflow.name = data['name']
+        if 'steps' in data:
+            workflow.steps = data['steps']
+            
+        workflow.save()
+        return JsonResponse({'success': True, 'message': 'Workflow updated successfully'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+@csrf_exempt
+def api_delete_workflow(request, workflow_id):
+    if request.method != 'DELETE':
+        return JsonResponse({'error': 'DELETE required'}, status=405)
+    try:
+        workflow = get_object_or_404(Workflow, id=workflow_id)
+        workflow.delete()
+        return JsonResponse({'success': True, 'message': 'Workflow deleted successfully'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
 
 # FAST DETECTOR (for /face/check/)
 # =====================================

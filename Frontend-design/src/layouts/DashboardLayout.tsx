@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { User } from '../types';
+import { apiRequest } from '../api/client';
 
 import { SidebarItem } from '../components/SidebarItem';
 
@@ -31,6 +32,52 @@ export const DashboardLayout = ({ user, onLogout, children }: DashboardLayoutPro
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const navigate = useNavigate();
   const location = useLocation();
+  const [timeoutMinutes, setTimeoutMinutes] = useState(60);
+
+  // Fetch Global Configuration for Timeout
+  React.useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const res = await apiRequest('/api/reporting/global-config/');
+        if (res.success && res.config.session_timeout_minutes) {
+          setTimeoutMinutes(res.config.session_timeout_minutes);
+        }
+      } catch (e) {
+        console.warn("Could not fetch timeout config", e);
+      }
+    };
+    fetchConfig();
+  }, []);
+
+  // Idle Timer Enforcer
+  React.useEffect(() => {
+    let lastActivity = Date.now();
+
+    const updateActivity = () => {
+      lastActivity = Date.now();
+    };
+
+    window.addEventListener('mousemove', updateActivity);
+    window.addEventListener('keydown', updateActivity);
+    window.addEventListener('scroll', updateActivity);
+    window.addEventListener('click', updateActivity);
+
+    const interval = setInterval(() => {
+      const timeoutMs = timeoutMinutes * 60 * 1000;
+      if (Date.now() - lastActivity >= timeoutMs) {
+        alert("Session expired due to inactivity. For your security, you have been logged out.");
+        onLogout();
+      }
+    }, 15000); // Check every 15 seconds
+
+    return () => {
+      window.removeEventListener('mousemove', updateActivity);
+      window.removeEventListener('keydown', updateActivity);
+      window.removeEventListener('scroll', updateActivity);
+      window.removeEventListener('click', updateActivity);
+      clearInterval(interval);
+    };
+  }, [timeoutMinutes, onLogout]);
 
   const menuItems = [
     { id: 'overview', path: '/', label: 'Admin Dashboard', icon: LayoutDashboard, roles: ['ADMIN'] },

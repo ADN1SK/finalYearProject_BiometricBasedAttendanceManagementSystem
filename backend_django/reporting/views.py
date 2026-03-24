@@ -8,6 +8,24 @@ from django.contrib.auth.decorators import login_required
 from .models import Notification, AuditLog
 from django.db import connection
 from django.utils import timezone
+from django.conf import settings
+import subprocess
+import os
+import json
+
+# --- Telemetry Tracker ---
+SERVER_START_TIME = timezone.now()
+
+def format_uptime(delta):
+    days = delta.days
+    hours, remainder = divmod(delta.seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if days > 0:
+        return f"{days}d {hours}h {minutes}m"
+    elif hours > 0:
+        return f"{hours}h {minutes}m"
+    else:
+        return f"{minutes}m {seconds}s"
 
 # --- Permission Helpers (Should be moved to a central utility module) ---
 
@@ -188,8 +206,90 @@ def system_operation(request, op_name):
     if not request.user.is_authenticated or not request.user.is_superuser:
         return JsonResponse({'error': 'Permission denied'}, status=403)
     
-    # Placeholder for actual maintenance/backup logic
-    return JsonResponse({'success': True, 'message': f'System operation "{op_name}" completed successfully.'})
+    try:
+        if op_name == 'db_maintenance':
+            # Django's autocommit must be temporarily forced to true to execute transaction-less VACUUM commands natively without OS sub-processes.
+            old_autocommit = connection.autocommit
+            connection.set_autocommit(True)
+            try:
+                with connection.cursor() as cursor:
+                    cursor.execute("VACUUM ANALYZE;")
+            finally:
+                connection.set_autocommit(old_autocommit)
+                
+            return JsonResponse({'success': True, 'message': 'Database maintenance (VACUUM ANALYZE) completed successfully. Dead tuples cleared and indexes optimized.'})
+            
+        elif op_name == 'system_backup':
+            # Create secure backend backups directory dynamically
+            backups_dir = os.path.join(settings.BASE_DIR, 'backups')
+            os.makedirs(backups_dir, exist_ok=True)
+            
+            # Generate deterministic filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"bbeams_backup_{timestamp}.sql"
+            filepath = os.path.join(backups_dir, filename)
+            
+            # Read Django database configurations securely
+            db_config = settings.DATABASES['default']
+            db_name = db_config.get('NAME')
+            db_user = db_config.get('USER')
+            db_host = db_config.get('HOST', 'localhost')
+            db_port = str(db_config.get('PORT', '5432'))
+            db_password = db_config.get('PASSWORD', '')
+            
+            # Environment var injection for secure pg_dump execution (passwordless UI prompt)
+            env = os.environ.copy()
+            if db_password:
+                env['PGPASSWORD'] = db_password
+                
+            import shutil
+            import platform
+            
+            # Detect pg_dump binary
+            pg_dump_path = shutil.which('pg_dump')
+            if not pg_dump_path:
+                if platform.system() == 'Windows':
+                    # Check common local PostgreSQL installation paths for the user
+                    for version in ['18', '17', '16', '15', '14']:
+                        cp = rf"C:\Program Files\PostgreSQL\{version}\bin\pg_dump.exe"
+                        if os.path.exists(cp):
+                            pg_dump_path = cp
+                            break
+            
+            if not pg_dump_path:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'The pg_dump utility was not found. Please ensure PostgreSQL bin/ is in your server PATH variables.'
+                }, status=500)
+                
+            dump_cmd = [
+                pg_dump_path,
+                '-h', db_host,
+                '-p', db_port,
+                '-U', db_user,
+                '-d', db_name,
+                '-F', 'c',  # Custom compressed format for Postgres
+                '-f', filepath
+            ]
+            
+            result = subprocess.run(dump_cmd, env=env, capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                return JsonResponse({
+                    'success': True, 
+                    'message': f'System backup completed successfully and saved securely as {filename}.'
+                })
+            else:
+                return JsonResponse({
+                    'success': False, 
+                    'error': f'Database Dump failed. Ensure pg_dump is in your system PATH. Trace: {result.stderr}'
+                }, status=500)
+                
+        else:
+            return JsonResponse({'success': False, 'error': f'Operational hook "{op_name}" not mapped.'}, status=400)
+            
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 @csrf_exempt
 def get_system_health(request):
@@ -205,13 +305,74 @@ def get_system_health(request):
         db_status = 'ERROR'
 
     active_terminals = Device.objects.filter(status='active').count()
+    uptime_delta = timezone.now() - SERVER_START_TIME
     
     data = {
         'success': True,
         'health': {
             'db_status': db_status,
             'active_terminals': f'{active_terminals:02d} ACTIVE',
+            'uptime': format_uptime(uptime_delta),
             'last_sync': timezone.now().isoformat()
         }
     }
     return JsonResponse(data)
+
+
+# =====================================
+# GLOBAL SYSTEM CONFIGURATION
+# =====================================
+
+CONFIG_FILE_PATH = os.path.join(settings.BASE_DIR, 'global_config.json')
+
+DEFAULT_CONFIG = {
+    'session_timeout_minutes': 60,
+    'strict_mode': False,
+    'max_login_attempts': 3
+}
+
+def _read_config():
+    if not os.path.exists(CONFIG_FILE_PATH):
+        with open(CONFIG_FILE_PATH, 'w') as f:
+            json.dump(DEFAULT_CONFIG, f, indent=4)
+        return DEFAULT_CONFIG
+    try:
+        with open(CONFIG_FILE_PATH, 'r') as f:
+            return json.load(f)
+    except Exception:
+        return DEFAULT_CONFIG
+
+@login_required
+def get_global_config(request):
+    """Retrieves the system-wide global configuration settings."""
+    if not request.user.is_superuser and not is_hr_officer(request.user):
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+    return JsonResponse({'success': True, 'config': _read_config()})
+
+@csrf_exempt
+def update_global_config(request):
+    """Saves system-wide configurations securely to the JSON engine store."""
+    if not request.user.is_authenticated or not request.user.is_superuser:
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+    
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+        
+    try:
+        data = json.loads(request.body)
+        current_config = _read_config()
+        
+        # Merge updates safely
+        if 'session_timeout_minutes' in data:
+            current_config['session_timeout_minutes'] = int(data['session_timeout_minutes'])
+        if 'strict_mode' in data:
+            current_config['strict_mode'] = bool(data['strict_mode'])
+        if 'max_login_attempts' in data:
+            current_config['max_login_attempts'] = int(data['max_login_attempts'])
+            
+        with open(CONFIG_FILE_PATH, 'w') as f:
+            json.dump(current_config, f, indent=4)
+            
+        return JsonResponse({'success': True, 'message': 'Global configuration applied successfully.'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
