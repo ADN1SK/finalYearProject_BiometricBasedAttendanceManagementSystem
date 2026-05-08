@@ -334,8 +334,6 @@ finalYearProject_BiometricBasedAttendanceManagementSystem/
 |------|------------|------------------|
 | **Super Admin** | Full system access, user management | ✅ Complete |
 | **Admin** | Attendance management, report generation | ✅ Full |
-| **Faculty** | View student attendance, mark attendance | ✅ Limited |
-| **Student** | View personal attendance, self-service | ✅ Limited |
 | **Guest** | View-only public reports | ✅ Restricted |
 
 ### Database Schema Overview
@@ -382,10 +380,10 @@ This project demonstrates proficiency in:
 |----------|--------------|
 | **Frontend** | HTML5, CSS3, JavaScript ES6+, React, Vue.js |
 | **Backend** | Node.js, Express.js, Python, REST APIs |
-| **Databases** | PostgreSQL, MongoDB, Redis |
-| **DevOps** | Docker, Kubernetes, CI/CD, GitHub Actions |
+| **Databases** | PostgreSQL |
+| **DevOps** | Docker, Kubernetes, CI/CD|
 | **Security** | JWT, OAuth2, SSL/TLS, Encryption |
-| **Tools** | Git, Linux, Docker, VS Code |
+| **Tools** | Git,  Docker, VS Code |
 
 ---
 
@@ -405,12 +403,12 @@ This project demonstrates proficiency in:
 - 📖 [Full API Documentation](./docs/API_DOCUMENTATION.md)
 - 🛠️ [Setup Guide](./docs/SETUP_GUIDE.md)
 - 📚 [User Manual](./docs/USER_MANUAL.md)
-- 🐛 [Report an Issue](https://github.com/ADN1SK/finalYearProject_BiometricBasedAttendanceManagementSystem/issues)
+- 🐛 [Report an Issue](https://github.com/finalYearProject_BiometricBasedAttendanceManagementSystem/issues)
 
 ### Useful Links
 
-- 🌐 [Project Repository](https://github.com/ADN1SK/finalYearProject_BiometricBasedAttendanceManagementSystem)
-- 📊 [Project Dashboard](https://github.com/ADN1SK/finalYearProject_BiometricBasedAttendanceManagementSystem/projects)
+- 🌐 [Project Repository](https://github.com/elisha5337/finalYearProject_BiometricBasedAttendanceManagementSystem)
+- 📊 [Project Dashboard](https://github.com/elisha5337/finalYearProject_BiometricBasedAttendanceManagementSystem/projects)
 - 🔄 [Original Project](https://github.com/elisha5337/finalYearProject_BiometricBasedAttendanceManagementSystem)
 
 ---
@@ -436,12 +434,11 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 <div align="center">
 
-### Made with ❤️ by ADN1SK
+### Made with ❤️ by GROUP 7
 
 **Star this repository if you found it helpful! ⭐**
 
-[![GitHub followers](https://img.shields.io/github/followers/ADN1SK?style=social)](https://github.com/ADN1SK)
-[![GitHub stars](https://img.shields.io/github/stars/ADN1SK/finalYearProject_BiometricBasedAttendanceManagementSystem?style=social)](https://github.com/ADN1SK/finalYearProject_BiometricBasedAttendanceManagementSystem)
+[![GitHub stars](https://img.shields.io/github/finalYearProject_BiometricBasedAttendanceManagementSystem?style=social)](https://github.com/finalYearProject_BiometricBasedAttendanceManagementSystem)
 
 ---
 
